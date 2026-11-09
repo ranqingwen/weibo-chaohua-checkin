@@ -63,9 +63,15 @@ docker compose pull && docker compose up -d
 
 访问 `http://服务器IP:8787`，使用 `PANEL_USER` / `PANEL_PASSWORD` 登录，点「➕ 添加账号」扫码即可。
 
+> **用面板部署（1Panel / 宝塔 / 群晖等）**：面板里的「编排」「应用」本质就是执行 `docker compose`，把上面这段原样粘进去即可（服务器上没有源码，别写 `build: .`，只用 `image:`）。点「启动」自动拉镜像，更新版本时点「更新」并勾选拉取镜像，`data/` 保留、登录状态不丢。拉取超时就配镜像加速；私有仓库需在面板里添加 `ghcr.io` 凭据（PAT 需 `read:packages`）。
+>
+> **镜像标签说明**：`main` 分支每次提交会自动构建并打上 `main` 与 `latest` 两个标签；打 `v1.0.0` 这类 tag 会额外生成版本号标签。
+> 如果拉取时报 `not found`，先确认镜像是否已构建，或改用分支标签：`image: ghcr.io/ranqingwen/weibo-chaohua-checkin:main`。
+> 自己拉镜像而不是用面板时，仓库为**私有**需先登录：`docker login ghcr.io -u 你的用户名 -p 你的PAT`；公开分享给他人使用请到 GitHub 的 Packages 设置里把该包改为 Public。
+
 ### 本地构建部署
 
-无法访问 ghcr.io、或想修改代码自用时，用项目自带的 `docker-compose.yml` 本地构建（把 `image:` 换成 `build: .`）：
+无法访问 ghcr.io、或想修改代码自用时，用项目自带的 `docker-compose.yml` 本地构建（该文件默认就是 `build: .`）：
 
 ```bash
 git clone https://github.com/ranqingwen/weibo-chaohua-checkin.git
@@ -73,7 +79,7 @@ cd weibo-chaohua-checkin
 docker compose up -d --build
 ```
 
-也可以将仓库 zip 上传到服务器解压后在目录内执行同样的命令（群晖 Container Manager、威联通 Container Station 等可视化工具选择该路径创建编排同理）。
+也可以将仓库 zip 上传到服务器解压后在目录内执行同样的命令。
 
 ### 本地运行（Windows / Linux，无需 Docker）
 
@@ -83,6 +89,32 @@ python app.py        # Windows 可直接双击 start.bat
 ```
 
 启动后访问 `http://127.0.0.1:8787`。
+
+### 🔁 自动构建与自动更新
+
+推到 `main` 分支（或用 GitHub 网页上传/编辑文件，本质也是提交到 main）就会**自动触发** `.github/workflows/docker.yml`：构建镜像 → 推送 GHCR → 同时打上 `main` 与 `latest` 标签。不需要在本地做任何构建。打 `v1.0.0` 这类 tag 还会额外生成版本号标签。
+
+服务器/NAS 侧想做到「推代码 → 自动更新」，可加一个 Watchtower 容器定时检查并重建：
+
+```yaml
+services:
+  weibo-checkin:
+    image: ghcr.io/ranqingwen/weibo-chaohua-checkin:latest
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"   # 只让 watchtower 管这个服务
+    # ... 其余配置同上
+
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - TZ=Asia/Shanghai
+    command: --label-enable --interval 3600 --cleanup   # 每小时检查一次
+```
+
+不加 Watchtower 也可以：每次收到新版本后，手动执行一次 `docker compose pull && docker compose up -d`（面板里点「更新」并勾选拉取镜像）即可，`data/` 目录挂载着，不会丢登录状态。
 
 ## ⚙️ 配置说明
 

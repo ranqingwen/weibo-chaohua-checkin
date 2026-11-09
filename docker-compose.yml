@@ -1,5 +1,8 @@
 services:
   weibo-checkin:
+    # 方式一(拉取现成镜像): 取消下一行注释, 并把 build 那行注释掉
+    # image: ghcr.io/ranqingwen/weibo-chaohua-checkin:latest
+    # 方式二(本地构建, 默认): 在本目录执行 docker compose up -d --build
     build: .
     container_name: weibo-checkin
     restart: unless-stopped
