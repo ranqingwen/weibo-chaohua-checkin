@@ -85,7 +85,7 @@ def _do_checkin(acc: dict, trigger: str) -> dict:
         relog_ok = _try_relogin(acc, name)
         if not relog_ok:
             msg = "登录已过期，请打开签到面板重新扫码登录"
-            if store.get_settings().get("push_on_expired", True) and _push_allowed():
+            if store.get_settings().get("push_on_check_fail", True) and _push_allowed():
                 notifier.push("微博签到·登录过期", "账号【%s】%s" % (name, msg))
             store.append_log("expired", "账号【%s】登录已过期 (触发: %s)" % (name, trigger))
             return {"ok": False, "msg": msg, "expired": True}
@@ -136,7 +136,10 @@ def _do_checkin(acc: dict, trigger: str) -> dict:
     store.append_log("checkin", "账号【%s】签到完成: 共%d个超话, 已签%d, 新签%d, 失败%d"
                      % (name, total, done, success, len(failed)))
 
-    if store.get_settings().get("push_on_checkin", True) and _push_allowed():
+    # 推送项目按事件勾选: 有失败走「签到失败」开关, 全部成功走「签到成功」开关
+    s = store.get_settings()
+    want = s.get("push_on_checkin_failed" if failed else "push_on_checkin_success", True)
+    if want and _push_allowed():
         content = ("账号: %s\n触发方式: %s\n\n"
                    "签到结果: 共 %d 个超话\n"
                    "├ 之前已签: %d 个\n"
@@ -166,7 +169,7 @@ def _try_relogin(acc: dict, name: str) -> bool:
         cookies = password_login(username, pwd)
     except Exception as e:
         store.append_log("error", "账号【%s】自动重登失败: %s" % (name, e))
-        if settings.get("push_on_expired", True) and _push_allowed():
+        if settings.get("push_on_check_fail", True) and _push_allowed():
             notifier.push("微博签到·自动重登失败",
                           "账号【%s】登录过期且密码自动重登失败:\n%s\n\n请打开面板重新扫码登录。" % (name, e))
         return False
@@ -177,7 +180,7 @@ def _try_relogin(acc: dict, name: str) -> bool:
     store.update_account(acc["id"], cookies=cookies, uid=info.get("uid") or acc.get("uid"),
                          status="ok", last_alive=time.time())
     store.append_log("info", "账号【%s】密码自动重登成功" % name)
-    if store.get_settings().get("push_on_expired", True) and _push_allowed():
+    if store.get_settings().get("push_on_check_ok", True) and _push_allowed():
         notifier.push("微博签到·自动重登成功", "账号【%s】登录过期后已自动重新登录, 签到继续。" % name)
     return True
 
@@ -205,25 +208,67 @@ def run_checkin_all(trigger: str = "定时"):
             store.append_log("error", "账号签到异常: %s" % e)
 
 
+def _fmt_next_check() -> str:
+    """下次检测时间的可读文案 (推送内容用)。"""
+    iso = next_check_iso()
+    if not iso:
+        return "未排期"
+    try:
+        dt = datetime.datetime.fromisoformat(iso)
+    except ValueError:
+        return iso[:16].replace("T", " ")
+    now = datetime.datetime.now(dt.tzinfo)
+    hm = dt.strftime("%H:%M")
+    if dt.date() == now.date():
+        return "今天 " + hm
+    if (dt.date() - now.date()).days == 1:
+        return "明天 " + hm
+    return dt.strftime("%m-%d ") + hm
+
+
 def expiry_monitor():
-    """定期检测所有账号登录状态; 过期则尝试重登并推送。"""
+    """定期检测所有账号登录状态; 过期则尝试重登并推送; 检测完推送汇总结果。"""
+    store.save("monitor.json", {"last_run": time.time()})  # 记录本次例行检测时刻, 用于计算下次时间
     settings = store.get_settings()
-    for acc in store.get_accounts():
-        client = WeiboClient(acc["cookies"])
-        info = client.login_info()
+    accounts = store.get_accounts()
+    lines, ok_count = [], 0
+    for acc in accounts:
+        name = acc.get("nickname") or acc.get("remark") or ("微博用户" + (acc.get("uid") or acc["id"]))
+        try:
+            client = WeiboClient(acc["cookies"])
+            info = client.login_info()
+        except Exception as e:
+            store.append_log("error", "账号【%s】例行检测异常: %s" % (name, str(e)[:120]))
+            lines.append("%s: 检测异常 (%s)" % (name, str(e)[:40]))
+            continue
         if info["login"]:
             store.update_account(acc["id"], status="ok", last_alive=time.time())
+            ok_count += 1
+            lines.append("%s: 正常" % name)
             continue
-        name = acc.get("nickname") or acc.get("remark") or ("微博用户" + (acc.get("uid") or acc["id"]))
         if _try_relogin(acc, name):
             store.update_account(acc["id"], status="ok")
+            ok_count += 1
+            lines.append("%s: 曾过期, 已自动重登成功" % name)
             continue
-        if acc.get("status") != "expired":  # 只在状态变化时推送一次
-            store.update_account(acc["id"], status="expired")
+        store.update_account(acc["id"], status="expired")
+        if acc.get("status") != "expired":  # 状态变化时记一条日志 (推送由检测汇总统一发)
             store.append_log("expired", "账号【%s】登录已过期 (例行检测)" % name)
-            if settings.get("push_on_expired", True) and _push_allowed():
-                notifier.push("微博签到·登录过期",
-                              "账号【%s】登录已过期, 请打开签到面板重新扫码登录。" % name)
+        lines.append("%s: 已过期, 请重新扫码登录" % name)
+    # 检测结果汇总推送: 全部正常走「检测登录成功」开关, 有异常走「检测登录失败」开关
+    if accounts and _push_allowed():
+        all_ok = ok_count == len(accounts)
+        if all_ok and not settings.get("push_on_check_ok", True):
+            return
+        if not all_ok and not settings.get("push_on_check_fail", True):
+            return
+        title = ("微博登录检测: 全部正常" if all_ok
+                 else "微博登录检测: %d/%d 正常" % (ok_count, len(accounts)))
+        content = ("检测结果: 共 %d 个账号\n" % len(accounts)
+                   + "\n".join(("└ " if i == len(lines) - 1 else "├ ") + l
+                                for i, l in enumerate(lines))
+                   + "\n\n下次检测: " + _fmt_next_check())
+        notifier.push(title, content)
 
 
 def _daily_job():
@@ -257,6 +302,21 @@ def next_check_iso():
     return nrt.isoformat() if nrt else None
 
 
+def _monitor_anchor() -> float:
+    """登录检测的计时锚点: 最近一次登录验证时刻。
+
+    取 例行检测记录(monitor.json) 与 各账号 last_alive (手动检测/签到成功
+    都会更新, 与账号卡片上「登录检测」显示的是同一个值) 的较大者。
+    """
+    try:
+        last = float((store.load("monitor.json", {}) or {}).get("last_run") or 0)
+    except (TypeError, ValueError):
+        last = 0
+    last = max(last, max((float(a.get("last_alive") or 0)
+                          for a in store.get_accounts()), default=0))
+    return last
+
+
 def schedule_all():
     """根据设置注册/刷新定时任务。"""
     settings = store.get_settings()
@@ -268,14 +328,24 @@ def schedule_all():
         job = scheduler.get_job("daily_checkin")
         if job:
             job.remove()
-    # 登录状态例行检测: 间隔可配置, 重启/保存设置后从当前时刻重新计时
+    # 登录状态例行检测: 间隔可配置, 下次时间锚定「上次检测时刻 + 间隔」,
+    # 容器重启/改设置不会顺延计时; 若已过期(如停机很久)则立即补测一次
     try:
         interval = int(settings.get("check_interval") or 6)
     except (TypeError, ValueError):
         interval = 6
     interval = max(1, min(24, interval))
+    next_rt = None
+    anchor = _monitor_anchor()
+    if anchor > 0:
+        tz = scheduler.timezone
+        next_dt = datetime.datetime.fromtimestamp(anchor + interval * 3600, tz=tz)
+        if next_dt <= datetime.datetime.now(tz):
+            next_dt = datetime.datetime.now(tz) + datetime.timedelta(seconds=5)
+        next_rt = next_dt
     scheduler.add_job(expiry_monitor, "interval", hours=interval,
-                      id="expiry_monitor", replace_existing=True)
+                      id="expiry_monitor", replace_existing=True,
+                      next_run_time=next_rt)
 
 
 # ---------------------------------------------------------------------------

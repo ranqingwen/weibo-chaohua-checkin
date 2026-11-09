@@ -15,8 +15,11 @@ DEFAULT_SETTINGS = {
     "checkin_time": "09:00",       # 签到时间 HH:MM
     "auto_relogin": True,          # 登录过期时尝试自动重登 (需要保存密码)
     "check_interval": 6,           # 登录状态例行检测间隔 (小时)
-    "push_on_checkin": True,       # 签到完成后推送
-    "push_on_expired": True,       # 登录过期推送
+    # 推送项目开关 (按事件勾选)
+    "push_on_checkin_success": True,   # 签到成功(无失败)推送
+    "push_on_checkin_failed": True,    # 签到有失败时推送
+    "push_on_check_ok": True,          # 登录检测全部正常时推送
+    "push_on_check_fail": True,        # 登录检测发现过期/异常时推送
     "push_hour": "",               # 推送整点: 如 "21" 只在 21 点那次执行推送; 空=每次都推
     "push": {
         "serverchan": "",          # Server酱 Turbo SendKey
@@ -75,7 +78,8 @@ def get_settings() -> dict:
 
 def save_settings(new: dict) -> dict:
     cur = get_settings()
-    for k in ("enable_daily", "auto_relogin", "push_on_checkin", "push_on_expired"):
+    for k in ("enable_daily", "auto_relogin", "push_on_checkin_success",
+              "push_on_checkin_failed", "push_on_check_ok", "push_on_check_fail"):
         if k in new:
             cur[k] = bool(new[k])
     if "checkin_time" in new:

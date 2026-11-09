@@ -95,6 +95,10 @@ textarea{height:84px;resize:vertical}
 .set-row:last-child{border-bottom:none}
 .set-row .lab{font-size:13px}
 .set-row .lab small{display:block;color:var(--sub);font-size:11px;margin-top:2px}
+/* 推送项目开关组 */
+.push-toggles{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-top:8px}
+.push-toggles label{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;white-space:nowrap}
+.push-toggles input{width:16px;height:16px;accent-color:var(--primary);flex-shrink:0}
 /* 时间选择: 小时 + 分钟下拉, 避免原生控件显示秒 */
 .time-pick{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .time-pick select{width:74px;background:var(--bg);border:1px solid var(--line);border-radius:8px;
@@ -143,6 +147,7 @@ textarea{height:84px;resize:vertical}
   /* 紧凑字号: 配合 viewport maximum-scale 避免 iOS 聚焦放大 */
   input,textarea{font-size:14px !important}
   .set-row .lab{font-size:12px}
+  .push-toggles{grid-template-columns:1fr;gap:7px}
   .btn{font-size:12.5px;padding:7px 13px}
   .btn.sm{padding:5px 9px;font-size:11.5px}
   .log-item{font-size:11.5px}
@@ -200,12 +205,15 @@ textarea{height:84px;resize:vertical}
       </div>
     </div>
     <div class="set-row">
-      <div class="lab">签到结果推送到手机<small>Server酱 / Bark / PushPlus / 企业微信 / Telegram</small></div>
-      <input type="checkbox" id="set-push-checkin">
-    </div>
-    <div class="set-row">
-      <div class="lab">登录过期推送<small>Cookie 失效时第一时间通知你</small></div>
-      <input type="checkbox" id="set-push-expired">
+      <div class="lab" style="align-items:flex-start">
+        推送项目<small>按事件勾选，勾选的事件才推送到手机；渠道 Key 在下方填写</small>
+      </div>
+      <div class="push-toggles">
+        <label><input type="checkbox" id="set-push-checkin-ok"> 签到成功</label>
+        <label><input type="checkbox" id="set-push-checkin-bad"> 签到失败</label>
+        <label><input type="checkbox" id="set-push-check-ok"> 检测登录正常</label>
+        <label><input type="checkbox" id="set-push-check-bad"> 检测登录异常</label>
+      </div>
     </div>
     <div class="set-row">
       <div class="lab">自动重登<small>过期后用已保存的账号密码自动重新登录</small></div>
@@ -220,21 +228,21 @@ textarea{height:84px;resize:vertical}
     <div class="push-title">📮 推送渠道 Key —— 任填一个即可收到推送，多填多推</div>
     <div class="push-grid">
       <div class="field"><label>PushPlus Token</label>
-        <input type="text" id="push-pushplus" placeholder="www.pushplus.plus 微信扫码登录后复制"></div>
+        <input type="text" id="push-pushplus" autocomplete="off" placeholder="www.pushplus.plus 微信扫码登录后复制"></div>
       <div class="field"><label>企业微信 Webhook Key</label>
-        <input type="text" id="push-wecom" placeholder="企业微信群机器人 Webhook 地址里 key= 后面那串"></div>
+        <input type="text" id="push-wecom" autocomplete="off" placeholder="企业微信群机器人 Webhook 地址里 key= 后面那串"></div>
       <div class="field"><label>Server酱 SendKey</label>
-        <input type="text" id="push-serverchan" placeholder="SCT 开头，sct.ftqq.com 微信扫码登录后复制"></div>
+        <input type="text" id="push-serverchan" autocomplete="off" placeholder="SCT 开头，sct.ftqq.com 微信扫码登录后复制"></div>
       <div class="field"><label>Bark Key 或完整 URL</label>
-        <input type="text" id="push-bark" placeholder="iPhone 装 Bark APP 复制；自建服务可填完整 URL"></div>
+        <input type="text" id="push-bark" autocomplete="off" placeholder="iPhone 装 Bark APP 复制；自建服务可填完整 URL"></div>
       <div class="field"><label>Telegram Bot Token</label>
-        <input type="text" id="push-tg-token" placeholder="@BotFather 创建机器人后发放的 Token"></div>
+        <input type="text" id="push-tg-token" autocomplete="off" placeholder="@BotFather 创建机器人后发放的 Token"></div>
       <div class="field"><label>Telegram Chat ID</label>
-        <input type="text" id="push-tg-chat" placeholder="给机器人发消息后 getUpdates 获取"></div>
+        <input type="text" id="push-tg-chat" autocomplete="off" placeholder="给机器人发消息后 getUpdates 获取"></div>
     </div>
     <div class="field" style="max-width:360px">
       <label>推送整点 <span style="color:var(--sub)">对所有渠道生效</span></label>
-      <input type="text" id="set-push-hour" placeholder="如 21，只在 21 点那次执行推送；留空每次都推">
+      <input type="text" id="set-push-hour" autocomplete="off" placeholder="如 21，只在 21 点那次执行推送；留空每次都推">
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px">
       <button class="btn primary" onclick="testPush()" style="padding:10px 18px">🔔 测试推送</button>
@@ -270,7 +278,7 @@ textarea{height:84px;resize:vertical}
 
     <div class="tabpane" id="pane-cookie">
       <div class="hint">在电脑浏览器登录 weibo.com → F12 → 应用/Application → Cookie，复制全部 Cookie（或手机抓包 m.weibo.cn 的 Cookie），粘贴到下方。</div>
-      <div class="field"><textarea id="cookie-input" placeholder="SUB=xxx; SUBP=xxx; ..."></textarea></div>
+      <div class="field"><textarea id="cookie-input" autocomplete="off" placeholder="SUB=xxx; SUBP=xxx; ..."></textarea></div>
       <button class="btn primary" style="width:100%" onclick="loginCookie()">验证并保存</button>
     </div>
 
@@ -279,7 +287,7 @@ textarea{height:84px;resize:vertical}
       <div class="field"><label>账号（手机号 / 邮箱）</label>
         <input type="text" id="pwd-user" autocomplete="off"></div>
       <div class="field"><label>密码</label>
-        <input type="password" id="pwd-pass"></div>
+        <input type="password" id="pwd-pass" autocomplete="new-password"></div>
       <div class="checkbox-row">
         <input type="checkbox" id="pwd-remember" checked>
         <label for="pwd-remember">记住密码（用于登录过期后自动重登）</label>
@@ -294,6 +302,25 @@ textarea{height:84px;resize:vertical}
 <script>
 const $ = s => document.querySelector(s);
 let qrTimer = null, qrQrid = null;
+
+// 防止浏览器把保存的账号密码自动填充进面板的输入框 (登录页 login.html 不做此处理, 那里保留自动填充)。
+// Chrome 会无视 autocomplete="off" 对疑似用户名的字段强行填充, 因此加载时设为只读
+// (只读字段不会被自动填充), 用户点击聚焦后解除, 离开再恢复。
+(function preventAutofill(){
+  ['push-pushplus','push-wecom','push-serverchan','push-bark','push-tg-token',
+   'push-tg-chat','set-push-hour','cookie-input','pwd-user','pwd-pass'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.setAttribute('readonly','readonly');
+    const unlock = ()=>el.removeAttribute('readonly');
+    el.addEventListener('pointerdown', unlock);
+    el.addEventListener('mousedown', unlock);
+    el.addEventListener('touchstart', unlock, {passive:true});
+    el.addEventListener('focus', unlock);
+    el.addEventListener('keydown', unlock);
+    el.addEventListener('blur', ()=>el.setAttribute('readonly','readonly'));
+  });
+})();
 
 function toast(msg){
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
@@ -604,8 +631,10 @@ async function loadSettings(){
     const t = String(s.checkin_time || '09:00').slice(0, 5).split(':');
     $('#set-time-h').value = t[0] || '09';
     $('#set-time-m').value = t[1] || '00';
-    $('#set-push-checkin').checked = s.push_on_checkin;
-    $('#set-push-expired').checked = s.push_on_expired;
+    $('#set-push-checkin-ok').checked = s.push_on_checkin_success;
+    $('#set-push-checkin-bad').checked = s.push_on_checkin_failed;
+    $('#set-push-check-ok').checked = s.push_on_check_ok;
+    $('#set-push-check-bad').checked = s.push_on_check_fail;
     $('#set-relogin').checked = s.auto_relogin;
     $('#set-check-interval').value = String(s.check_interval || 6);
     $('#push-serverchan').value = p.serverchan || '';
@@ -625,7 +654,7 @@ function updateNextRun(s){
   if(!nr) return;
   let t = s.enable_daily ? '⏰ 每日 ' + String(s.checkin_time).slice(0,5) + ' 自动签到' : '⏸ 自动签到已关闭';
   const ph = String(s.push_hour || '').trim();
-  if (s.push_on_checkin && ph !== '' && !isNaN(+ph)) t += ' · ' + ph + ' 点推送';
+  if (ph !== '' && !isNaN(+ph)) t += ' · ' + ph + ' 点推送';
   nr.textContent = t;
 }
 
@@ -635,8 +664,10 @@ async function saveSettings(){
     const j = await api('/api/settings', {method:'POST', body:JSON.stringify({
       enable_daily: s('set-daily'),
       checkin_time: ($('#set-time-h').value || '09') + ':' + ($('#set-time-m').value || '00'),
-      push_on_checkin: s('set-push-checkin'),
-      push_on_expired: s('set-push-expired'),
+      push_on_checkin_success: s('set-push-checkin-ok'),
+      push_on_checkin_failed: s('set-push-checkin-bad'),
+      push_on_check_ok: s('set-push-check-ok'),
+      push_on_check_fail: s('set-push-check-bad'),
       auto_relogin: s('set-relogin'),
       check_interval: $('#set-check-interval').value,
       push: {
