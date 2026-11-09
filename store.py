@@ -14,6 +14,7 @@ DEFAULT_SETTINGS = {
     "enable_daily": True,          # 每日定时签到
     "checkin_time": "09:00",       # 签到时间 HH:MM
     "auto_relogin": True,          # 登录过期时尝试自动重登 (需要保存密码)
+    "check_interval": 6,           # 登录状态例行检测间隔 (小时)
     "push_on_checkin": True,       # 签到完成后推送
     "push_on_expired": True,       # 登录过期推送
     "push_hour": "",               # 推送整点: 如 "21" 只在 21 点那次执行推送; 空=每次都推
@@ -84,6 +85,11 @@ def save_settings(new: dict) -> dict:
         if not m or not (0 <= int(m.group(1)) <= 23 and int(m.group(2)) <= 59):
             raise ValueError("签到时间格式应为 HH:MM")
         cur["checkin_time"] = "%02d:%02d" % (int(m.group(1)), int(m.group(2)))
+    if "check_interval" in new:
+        v = str(new["check_interval"]).strip()
+        if not v.isdigit() or not 1 <= int(v) <= 24:
+            raise ValueError("登录检测间隔应为 1-24 之间的整数小时")
+        cur["check_interval"] = int(v)
     if "push_hour" in new:
         v = str(new["push_hour"]).strip()
         if v and (not v.isdigit() or not 0 <= int(v) <= 23):

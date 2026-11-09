@@ -247,6 +247,16 @@ def _startup_makeup():
         threading.Thread(target=run_checkin_all, args=("补签",), daemon=True).start()
 
 
+def next_check_iso():
+    """下一次登录状态例行检测的时间 (ISO 字符串), 任务未注册时返回 None。"""
+    try:
+        job = scheduler.get_job("expiry_monitor")
+    except Exception:
+        return None
+    nrt = getattr(job, "next_run_time", None) if job else None
+    return nrt.isoformat() if nrt else None
+
+
 def schedule_all():
     """根据设置注册/刷新定时任务。"""
     settings = store.get_settings()
@@ -258,7 +268,13 @@ def schedule_all():
         job = scheduler.get_job("daily_checkin")
         if job:
             job.remove()
-    scheduler.add_job(expiry_monitor, "interval", hours=6,
+    # 登录状态例行检测: 间隔可配置, 重启/保存设置后从当前时刻重新计时
+    try:
+        interval = int(settings.get("check_interval") or 6)
+    except (TypeError, ValueError):
+        interval = 6
+    interval = max(1, min(24, interval))
+    scheduler.add_job(expiry_monitor, "interval", hours=interval,
                       id="expiry_monitor", replace_existing=True)
 
 
@@ -525,7 +541,8 @@ def api_login_password(body: PasswordBody):
 # -- 设置 / 日志 ----------------------------------------------------------------
 @app.get("/api/settings")
 def api_get_settings():
-    return {"ok": True, "settings": store.get_settings()}
+    return {"ok": True, "settings": store.get_settings(),
+            "next_check": next_check_iso()}
 
 
 @app.post("/api/settings")
@@ -536,7 +553,7 @@ def api_set_settings(body: dict):
         raise HTTPException(400, str(e))
     schedule_all()
     store.append_log("info", "设置已更新")
-    return {"ok": True, "settings": s}
+    return {"ok": True, "settings": s, "next_check": next_check_iso()}
 
 
 class PushTestBody(BaseModel):
@@ -586,7 +603,7 @@ def api_stats():
     return {"ok": True, "accounts": len(accs),
             "checked_today": len(checked_accs),
             "today_success": success, "today_failed": failed,
-            "expired": expired}
+            "expired": expired, "next_check": next_check_iso()}
 
 
 if __name__ == "__main__":

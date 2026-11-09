@@ -29,6 +29,9 @@ h1 .logo img{display:block}
 .top-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .nextbar{max-width:960px;margin:0 auto;padding:0 20px 8px;text-align:center}
 .next-run{font-size:12px;color:var(--sub)}
+.next-run + .next-run{margin-left:12px}
+.next-run:empty{display:none}
+#next-run:empty + .next-run{margin-left:0}
 .wrap{max-width:960px;margin:0 auto;padding:22px 20px}
 .muted{color:var(--sub);font-size:12px}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
@@ -159,7 +162,7 @@ textarea{height:84px;resize:vertical}
       <button class="btn sm" onclick="logout()">⏻ 退出</button>
     </div>
   </div>
-  <div class="nextbar"><span class="next-run" id="next-run"></span></div>
+  <div class="nextbar"><span class="next-run" id="next-run"></span><span class="next-run" id="next-check"></span></div>
 </div>
 
 <div class="wrap">
@@ -207,6 +210,12 @@ textarea{height:84px;resize:vertical}
     <div class="set-row">
       <div class="lab">自动重登<small>过期后用已保存的账号密码自动重新登录</small></div>
       <input type="checkbox" id="set-relogin">
+    </div>
+    <div class="set-row">
+      <div class="lab">登录状态检测<small>每隔一段时间检查 Cookie 是否失效，过期立即推送</small></div>
+      <div class="time-pick">
+        <select id="set-check-interval" aria-label="检测间隔"></select>
+      </div>
     </div>
     <div class="push-title">📮 推送渠道 Key —— 任填一个即可收到推送，多填多推</div>
     <div class="push-grid">
@@ -374,6 +383,7 @@ async function loadStats(){
       lab.textContent = '今日已签账号';
       sub.textContent = `成功 ${j.today_success} · 失败 ${j.today_failed} 个超话`;
     }
+    renderNextCheck(j.next_check);
   }catch(e){}
 }
 
@@ -550,11 +560,46 @@ function fillTimeOptions(){
   for(let i = 0; i < 60; i++) m.add(new Option(pad(i), pad(i)));
 }
 
+function fillIntervalOptions(){
+  const el = $('#set-check-interval');
+  if(!el || el.options.length) return;
+  [1, 2, 3, 4, 6, 8, 12, 24].forEach(n => el.add(new Option('每 ' + n + ' 小时', String(n))));
+}
+
+/* 把后端返回的 ISO 时间转成「今天 21:38」这类可读文案 */
+function fmtNextCheck(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  if(isNaN(d.getTime())) return '';
+  const p = n => String(n).padStart(2, '0');
+  const hhmm = p(d.getHours()) + ':' + p(d.getMinutes());
+  const today = new Date(); today.setHours(0,0,0,0);
+  const day = new Date(d); day.setHours(0,0,0,0);
+  const diff = Math.round((day - today) / 86400000);
+  let when;
+  if(diff === 0) when = '今天 ' + hhmm;
+  else if(diff === 1) when = '明天 ' + hhmm;
+  else when = (d.getMonth()+1) + '-' + p(d.getDate()) + ' ' + hhmm;
+  const mins = Math.round((d - Date.now()) / 60000);
+  let left = '';
+  if(mins > 0){
+    if(mins < 60) left = '约 ' + mins + ' 分钟后';
+    else left = '约 ' + Math.round(mins / 60 * 10) / 10 + ' 小时后';
+  }
+  return '🔍 下次检测登录 ' + when + (left ? '（' + left + '）' : '');
+}
+
+function renderNextCheck(iso){
+  const el = $('#next-check');
+  if(el) el.textContent = fmtNextCheck(iso);
+}
+
 async function loadSettings(){
   try{
     const j = await api('/api/settings');
     const s = j.settings, p = s.push;
     fillTimeOptions();
+    fillIntervalOptions();
     $('#set-daily').checked = s.enable_daily;
     const t = String(s.checkin_time || '09:00').slice(0, 5).split(':');
     $('#set-time-h').value = t[0] || '09';
@@ -562,6 +607,7 @@ async function loadSettings(){
     $('#set-push-checkin').checked = s.push_on_checkin;
     $('#set-push-expired').checked = s.push_on_expired;
     $('#set-relogin').checked = s.auto_relogin;
+    $('#set-check-interval').value = String(s.check_interval || 6);
     $('#push-serverchan').value = p.serverchan || '';
     $('#push-bark').value = p.bark || '';
     $('#push-pushplus').value = p.pushplus || '';
@@ -570,6 +616,7 @@ async function loadSettings(){
     $('#push-tg-chat').value = p.tg_chat_id || '';
     $('#set-push-hour').value = s.push_hour || '';
     updateNextRun(s);
+    renderNextCheck(j.next_check);
   }catch(e){}
 }
 
@@ -591,6 +638,7 @@ async function saveSettings(){
       push_on_checkin: s('set-push-checkin'),
       push_on_expired: s('set-push-expired'),
       auto_relogin: s('set-relogin'),
+      check_interval: $('#set-check-interval').value,
       push: {
         serverchan: $('#push-serverchan').value.trim(),
         bark: $('#push-bark').value.trim(),
@@ -602,6 +650,7 @@ async function saveSettings(){
       push_hour: $('#set-push-hour').value.trim()
     })});
     if (j && j.settings) updateNextRun(j.settings);   // 顶栏立即更新, 无需刷新
+    if (j && j.next_check) renderNextCheck(j.next_check);
     toast('设置已保存');
   }catch(e){ toast('保存失败: '+e.message); }
   loadStats();
