@@ -426,7 +426,7 @@ async function loadLogs(){
   }catch(e){}
 }
 
-function loadAll(){ loadAccounts(); loadStats(); loadLogs(); loadSettings(); }
+async function loadAll(){ await Promise.all([loadAccounts(), loadStats(), loadLogs(), loadSettings()]); }
 
 async function checkin(id, btn){
   if(btn){ btn.disabled = true; btn.textContent = '签到中...'; }
@@ -451,15 +451,22 @@ async function checkinAll(){
 }
 
 /* 检测签到: 只查询每个超话的当前状态, 不发任何签到请求 */
+/* 在账号卡片的检测结果行显示消息; refresh 时先刷新列表再补写, 避免被重渲染冲掉 */
+async function showDetectMsg(id, html, refresh){
+  if(refresh) await loadAll();
+  const el = $('#dt-'+id);
+  if(el) el.innerHTML = html;
+}
+
 async function detect(id, btn){
   const label = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = '检测中...'; }
-  const el = $('#dt-'+id);
   try{
     const j = await api(`/api/accounts/${id}/detect`, {method:'POST'});
     if(!j.ok){
-      el.innerHTML = `<span style="color:var(--bad)">✗ ${esc(j.msg || '检测失败')}</span>`;
-      if(j.expired) loadAll();
+      const msg = `<span style="color:var(--bad)">✗ ${esc(j.msg || '检测失败')}</span>`;
+      // 过期时刷新列表更新「已过期」角标, 刷新后重新写回提示, 保证用户看得见
+      await showDetectMsg(id, msg, !!j.expired);
       return;
     }
     const p = j.pending || [], un = j.unknown || [];
@@ -473,9 +480,9 @@ async function detect(id, btn){
       if(p.length) html += `<br><span style="color:var(--warn)">待签: ${esc(p.slice(0,8).join('、'))}${p.length>8?' 等':''}</span>`;
       if(un.length) html += `<br><span style="color:var(--sub)">另有 ${un.length} 个超话状态未识别</span>`;
     }
-    el.innerHTML = html;
+    await showDetectMsg(id, html, false);
   }catch(e){
-    el.innerHTML = `<span style="color:var(--bad)">✗ 检测失败: ${esc(e.message)}</span>`;
+    await showDetectMsg(id, `<span style="color:var(--bad)">✗ 检测失败: ${esc(e.message)}</span>`, false);
   }finally{
     if(btn){ btn.disabled = false; btn.textContent = label || '检测签到'; }
   }
@@ -484,9 +491,13 @@ async function detect(id, btn){
 async function checkLogin(id){
   try{
     const j = await api(`/api/accounts/${id}/check_login`, {method:'POST'});
-    toast(j.login ? '登录状态正常 ✓' : '登录已过期，请重新扫码');
+    const ok = !!j.login;
+    toast(ok ? '登录状态正常 ✓' : '登录已过期，请重新扫码');
+    const msg = ok
+      ? `<span style="color:var(--ok)">✓ 登录状态正常</span>`
+      : `<span style="color:var(--bad)">✗ 登录已过期，请重新扫码登录</span>`;
+    await showDetectMsg(id, msg, !ok);
   }catch(e){ toast('检测失败: '+e.message); }
-  loadAll();
 }
 
 async function delAcc(id){
