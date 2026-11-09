@@ -97,6 +97,27 @@ def _do_checkin(acc: dict, trigger: str) -> dict:
         # 拉不到任何超话多半也是 Cookie 失效或接口异常
         store.append_log("warn", "账号【%s】未获取到任何超话数据" % name)
 
+    result = {
+        "ts": time.time(), "trigger": trigger,
+        "total": total, "done_before": done,
+        "signable": len(signable), "success": 0, "failed": [],
+    }
+
+    # 没有可签的超话: 全部已签(或本来就无可签), 不重复请求签到接口, 直接给出结论
+    if not signable:
+        store.update_account(
+            acc["id"], last_checkin=time.time(),
+            last_checkin_date=datetime.date.today().isoformat(),
+            last_result=result, status="ok", last_alive=time.time())
+        if done > 0:
+            store.append_log("checkin", "账号【%s】今日 %d 个超话已全部签到, 无需重复签到"
+                             % (name, done))
+            return {"ok": True, "result": result, "all_done": True,
+                    "msg": "今日 %d 个超话已全部签到 ✓，无需重复签到" % done}
+        store.append_log("warn", "账号【%s】未发现可签到的超话 (共%d个)" % (name, total))
+        return {"ok": True, "result": result,
+                "msg": "未发现可签到的超话（共 %d 个）" % total}
+
     success, failed = 0, []
     for i, t in enumerate(signable, 1):
         ok, msg = client.sign(t)
@@ -106,11 +127,8 @@ def _do_checkin(acc: dict, trigger: str) -> dict:
             failed.append("%s: %s" % (t["name"] or "未命名超话", msg))
         time.sleep(0.8)  # 控制频率, 避免触发风控
 
-    result = {
-        "ts": time.time(), "trigger": trigger,
-        "total": total, "done_before": done,
-        "signable": len(signable), "success": success, "failed": failed,
-    }
+    result["success"] = success
+    result["failed"] = failed
     acc = store.update_account(
         acc["id"], last_checkin=time.time(),
         last_checkin_date=datetime.date.today().isoformat(),
@@ -127,7 +145,7 @@ def _do_checkin(acc: dict, trigger: str) -> dict:
                    % (name, trigger, total, done, success, len(failed)))
         if failed:
             content += "\n\n失败明细:\n" + "\n".join("- " + f for f in failed[:10])
-        notifier.push("微博超话签到 %d/%d 成功 %d 失败 %d"
+        notifier.push("微博超话签到: 共%d 成功%d 失败%d"
                       % (total, success, len(failed)), content)
 
     return {"ok": True, "result": result}
@@ -559,8 +577,9 @@ def api_stats():
     accs = store.get_accounts()
     checked_accs = [a for a in accs if a.get("last_checkin_date") == today]
     expired = sum(1 for a in accs if a.get("status") == "expired")
-    # 今日签到超话口径: 汇总今天签过到的账号的最近一次签到结果
+    # 今日签到超话口径: 新签成功数 + 之前已签数 (今天实际处于已签状态的超话)
     success = sum(int((a.get("last_result") or {}).get("success") or 0)
+                  + int((a.get("last_result") or {}).get("done_before") or 0)
                   for a in checked_accs)
     failed = sum(len((a.get("last_result") or {}).get("failed") or [])
                  for a in checked_accs)

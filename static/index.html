@@ -328,9 +328,11 @@ async function loadAccounts(){
       const r = a.last_result;
       let line = '';
       if(r){
+        const signed = (r.success||0) + (r.done_before||0);
         line = `最近签到: <b>${ts2s(r.ts)}</b> · 共 <b>${r.total}</b> 个超话：本次成功 <b style="color:var(--ok)">${r.success}</b> 个，失败 <b style="color:${r.failed.length?'var(--bad)':'var(--sub)'}">${r.failed.length}</b> 个，之前已签 ${r.done_before} 个`;
         if(r.failed.length) line += `<br><span style="color:var(--bad)">失败: ${esc(r.failed.slice(0,3).join('；'))}</span>`;
-      } else line = '尚未签到，点击「立即签到」试试';
+        else if(signed >= r.total && r.total > 0) line += `<br><span style="color:var(--ok)">✓ 今日 ${r.total} 个超话已全部签到，无需重复签到</span>`;
+      } else line = '暂无签到记录，可先点「检测签到」查看今日状态';
       return `<div class="card" style="margin-bottom:10px;background:var(--bg);border-radius:10px">
         <div class="acc">
           <div class="avatar">${esc(initial)}</div>
@@ -394,8 +396,11 @@ async function checkin(id, btn){
   try{
     const j = await api(`/api/accounts/${id}/checkin`, {method:'POST'});
     if(j.ok){
-      const r = j.result;
-      toast(`签到完成: 新签${r.success}个, 失败${r.failed.length}个`);
+      if(j.msg) toast(j.msg);          // 全部已签 / 无可签等场景, 直接给结论
+      else{
+        const r = j.result;
+        toast(`签到完成: 新签${r.success}个, 失败${r.failed.length}个`);
+      }
     } else toast(j.msg || '签到失败');
   }catch(e){ toast('签到失败: '+e.message); }
   loadAll();
@@ -421,9 +426,16 @@ async function detect(id, btn){
       return;
     }
     const p = j.pending || [], un = j.unknown || [];
-    let html = `签到检测: 共 <b>${j.total}</b> 个超话 · 已签 <b style="color:var(--ok)">${j.done}</b> 个 · 待签 <b style="color:${p.length?'var(--warn)':'var(--sub)'}">${p.length}</b> 个`;
-    if(p.length) html += `<br><span style="color:var(--warn)">待签: ${esc(p.slice(0,8).join('、'))}${p.length>8?' 等':''}</span>`;
-    if(un.length) html += `<br><span style="color:var(--sub)">另有 ${un.length} 个超话状态未识别</span>`;
+    let html;
+    if(j.total === 0){
+      html = `<span style="color:var(--sub)">该账号没有关注任何超话</span>`;
+    }else if(p.length === 0 && un.length === 0){
+      html = `签到检测: 共 <b>${j.total}</b> 个超话，<span style="color:var(--ok)">今日已全部签到 ✓，无需重复签到</span>`;
+    }else{
+      html = `签到检测: 共 <b>${j.total}</b> 个超话 · 已签 <b style="color:var(--ok)">${j.done}</b> 个 · 待签 <b style="color:${p.length?'var(--warn)':'var(--sub)'}">${p.length}</b> 个`;
+      if(p.length) html += `<br><span style="color:var(--warn)">待签: ${esc(p.slice(0,8).join('、'))}${p.length>8?' 等':''}</span>`;
+      if(un.length) html += `<br><span style="color:var(--sub)">另有 ${un.length} 个超话状态未识别</span>`;
+    }
     el.innerHTML = html;
   }catch(e){
     el.innerHTML = `<span style="color:var(--bad)">✗ 检测失败: ${esc(e.message)}</span>`;
