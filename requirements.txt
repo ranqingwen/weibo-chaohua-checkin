@@ -1,0 +1,5 @@
+fastapi>=0.110
+uvicorn>=0.29
+requests>=2.28
+apscheduler>=3.10
+pydantic>=2.0

@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>微博超话签到面板</title>
+<link rel="icon" type="image/svg+xml" href="/static/weibo.svg">
+<link rel="apple-touch-icon" href="/static/weibo.svg">
+<style>
+:root{
+  --bg:#f4f5f7; --card:#ffffff; --text:#1f2329; --sub:#8a919f;
+  --line:#e8eaee; --primary:#e6713a; --primary-h:#d85f28;
+  --ok:#2ba471; --warn:#d98634; --bad:#d44; --chip:#f0f1f4; --bar:#ffffff;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0d1117; --card:#161b22; --text:#e8eaf0; --sub:#8a919f;
+    --line:#30363d; --chip:#21262d; --bar:#10141c; }
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  min-height:100vh;padding-bottom:60px}
+/* 顶栏 */
+.topbar{position:sticky;top:0;z-index:40;background:var(--bar);border-bottom:1px solid var(--line)}
+.topbar-in{max-width:960px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;
+  justify-content:space-between;gap:10px}
+h1{font-size:19px;font-weight:700;display:flex;align-items:center;gap:8px}
+h1 .logo{display:inline-flex;align-items:center;flex-shrink:0}
+h1 .logo img{display:block}
+.top-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.next-run{font-size:12px;color:var(--sub)}
+.wrap{max-width:960px;margin:0 auto;padding:22px 20px}
+.muted{color:var(--sub);font-size:12px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.stat .num{font-size:22px;font-weight:700}
+.stat .label{font-size:12px;color:var(--sub);margin-top:2px}
+.stat .sub{font-size:11px;color:var(--sub);margin-top:2px;min-height:14px;opacity:.85}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:16px}
+.sec-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.sec-title h2{font-size:15px;font-weight:600}
+.sec-title h2 .ico{margin-right:6px}
+.sec-hint{font-size:12px;color:var(--sub);margin:-6px 0 14px;line-height:1.7}
+.btn{border:none;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer;
+  background:var(--chip);color:var(--text);transition:.15s}
+.btn:hover{opacity:.85}
+.btn.primary{background:var(--primary);color:#fff}
+.btn.danger{color:var(--bad);background:transparent}
+.btn.sm{padding:5px 10px;font-size:12px}
+.acc{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.avatar{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#f5a06a,#e6713a);
+  color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;flex-shrink:0}
+.acc-info{flex:1;min-width:150px}
+.acc-name{font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px}
+.acc-meta{font-size:12px;color:var(--sub);margin-top:3px}
+.badge{font-size:11px;padding:2px 8px;border-radius:20px;font-weight:500}
+.badge.ok{background:rgba(43,164,113,.12);color:var(--ok)}
+.badge.expired{background:rgba(221,68,68,.12);color:var(--bad)}
+.badge.pwd{background:rgba(217,134,52,.14);color:var(--warn)}
+.acc-ops{display:flex;gap:6px;flex-wrap:wrap}
+.result-line{font-size:12px;color:var(--sub);margin-top:8px;line-height:1.7}
+.result-line b{color:var(--text)}
+.empty{text-align:center;color:var(--sub);font-size:13px;padding:30px 0}
+/* modal */
+.modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
+  align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal-mask.show{display:flex}
+.modal{background:var(--card);border-radius:16px;width:100%;max-width:420px;
+  max-height:90vh;overflow-y:auto;padding:20px}
+.tabs{display:flex;gap:6px;margin-bottom:16px;background:var(--chip);border-radius:10px;padding:4px}
+.tab{flex:1;text-align:center;padding:8px 0;border-radius:8px;font-size:13px;cursor:pointer;color:var(--sub)}
+.tab.active{background:var(--card);color:var(--text);font-weight:600}
+.tabpane{display:none}.tabpane.active{display:block}
+.qr-box{text-align:center;padding:6px 0}
+.qr-box img{width:200px;height:200px;border-radius:10px;border:1px solid var(--line)}
+.qr-status{margin-top:10px;font-size:13px;color:var(--sub)}
+.qr-status.scanned{color:var(--warn)}
+.qr-status.confirmed{color:var(--ok)}
+textarea,input[type=text],input[type=password],input[type=time]{
+  width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;
+  padding:10px 12px;color:var(--text);font-size:13px;outline:none;font-family:inherit}
+textarea{height:90px;resize:vertical}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;color:var(--sub);margin-bottom:6px}
+.checkbox-row{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px}
+.hint{font-size:12px;color:var(--sub);line-height:1.7;margin-bottom:10px}
+/* settings */
+.set-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;
+  border-bottom:1px solid var(--line);gap:10px}
+.set-row:last-child{border-bottom:none}
+.set-row .lab{font-size:13px}
+.set-row .lab small{display:block;color:var(--sub);font-size:11px;margin-top:2px}
+input[type=time]{width:110px}
+.push-title{font-size:12px;color:var(--sub);margin:12px 0 8px;padding-top:10px;border-top:1px solid var(--line)}
+.push-title{font-size:13px;color:var(--text);font-weight:600;margin:18px 0 12px;
+  padding-top:14px;border-top:1px solid var(--line)}
+.push-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+@media (max-width:620px){.push-grid{grid-template-columns:1fr}}
+.test-hint{font-size:12px;color:var(--sub);margin-top:8px;line-height:1.7}
+/* logs */
+.log-item{font-size:12px;padding:7px 0;border-bottom:1px dashed var(--line);line-height:1.6}
+.log-item .t{color:var(--sub);margin-right:8px;font-family:ui-monospace,monospace}
+.k-checkin{color:var(--ok)} .k-error,.k-expired{color:var(--bad)} .k-warn{color:var(--warn)}
+/* toast */
+#toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);background:var(--text);
+  color:var(--bg);padding:10px 18px;border-radius:24px;font-size:13px;opacity:0;
+  pointer-events:none;transition:.3s;z-index:99;max-width:85vw}
+#toast.show{opacity:.95}
+/* 移动端适配 */
+@media (max-width:620px){
+  .topbar-in{padding:10px 12px}
+  h1{font-size:16px}
+  h1 .logo img{width:22px;height:22px}
+  .next-run{display:none}
+  .wrap{padding:14px 12px}
+  .stats{gap:8px}
+  .stat{padding:10px 8px;border-radius:10px}
+  .stat .num{font-size:18px}
+  .card{padding:14px 12px;border-radius:12px;margin-bottom:12px}
+  .sec-hint{margin-bottom:12px}
+  .acc{gap:10px}
+  .avatar{width:38px;height:38px;font-size:15px}
+  .acc-info{min-width:110px}
+  .acc-ops{width:100%}
+  .acc-ops .btn{flex:1;padding:7px 6px;text-align:center}
+  .modal{padding:16px;border-radius:14px}
+  /* 16px 以上避免 iOS 聚焦自动放大 */
+  input,textarea{font-size:16px !important}
+  input[type=time]{width:110px}
+  .set-row .lab{font-size:12px}
+}
+@media (max-width:380px){
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .top-right .btn{padding:5px 8px}
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-in">
+    <h1><img class="logo" src="/static/weibo.svg" alt="微博" width="26" height="26">微博超话签到面板</h1>
+    <div class="top-right">
+      <span class="next-run" id="next-run"></span>
+      <button class="btn sm" onclick="loadAll()">🔄 刷新</button>
+      <button class="btn sm" onclick="logout()">⏻ 退出</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="stats">
+    <div class="stat"><div class="num" id="st-acc">-</div><div class="label">账号数</div></div>
+    <div class="stat"><div class="num" id="st-checked">-</div><div class="label" id="st-checked-label">今日签到</div><div class="sub" id="st-checked-sub">&nbsp;</div></div>
+    <div class="stat"><div class="num" id="st-expired">-</div><div class="label">登录过期</div></div>
+  </div>
+
+  <div class="card">
+    <div class="sec-title">
+      <h2><span class="ico">👤</span>我的账号</h2>
+      <div style="display:flex;gap:8px">
+        <button class="btn sm" onclick="checkinAll()">⚡ 全部签到</button>
+        <button class="btn primary sm" onclick="openAdd()">➕ 添加账号</button>
+      </div>
+    </div>
+    <div class="sec-hint">支持扫码 / Cookie / 账号密码三种方式添加，添加后每日自动签掉所有关注的超话</div>
+    <div id="acc-list"><div class="empty">加载中...</div></div>
+  </div>
+
+  <div class="card">
+    <div class="sec-title"><h2><span class="ico">⚙️</span>签到与推送设置</h2></div>
+    <div class="sec-hint">改动点「💾 保存设置」后立即生效；推送渠道任填一个即可，多填多推</div>
+    <div class="set-row">
+      <div class="lab">每日自动签到<small>到点自动签到最后一次未签的账号</small></div>
+      <input type="checkbox" id="set-daily">
+    </div>
+    <div class="set-row">
+      <div class="lab">签到时间</div>
+      <input type="time" id="set-time">
+    </div>
+    <div class="set-row">
+      <div class="lab">签到结果推送到手机<small>Server酱 / Bark / PushPlus / 企业微信 / Telegram</small></div>
+      <input type="checkbox" id="set-push-checkin">
+    </div>
+    <div class="set-row">
+      <div class="lab">登录过期推送<small>Cookie 失效时第一时间通知你</small></div>
+      <input type="checkbox" id="set-push-expired">
+    </div>
+    <div class="set-row">
+      <div class="lab">自动重登<small>过期后用已保存的账号密码自动重新登录</small></div>
+      <input type="checkbox" id="set-relogin">
+    </div>
+    <div class="push-title">📮 推送渠道 Key —— 任填一个即可收到推送，多填多推</div>
+    <div class="push-grid">
+      <div class="field"><label>PushPlus Token</label>
+        <input type="text" id="push-pushplus" placeholder="www.pushplus.plus 微信扫码登录后复制"></div>
+      <div class="field"><label>企业微信 Webhook Key</label>
+        <input type="text" id="push-wecom" placeholder="企业微信群机器人 Webhook 地址里 key= 后面那串"></div>
+      <div class="field"><label>Server酱 SendKey</label>
+        <input type="text" id="push-serverchan" placeholder="SCT 开头，sct.ftqq.com 微信扫码登录后复制"></div>
+      <div class="field"><label>Bark Key 或完整 URL</label>
+        <input type="text" id="push-bark" placeholder="iPhone 装 Bark APP 复制；自建服务可填完整 URL"></div>
+      <div class="field"><label>Telegram Bot Token</label>
+        <input type="text" id="push-tg-token" placeholder="@BotFather 创建机器人后发放的 Token"></div>
+      <div class="field"><label>Telegram Chat ID</label>
+        <input type="text" id="push-tg-chat" placeholder="给机器人发消息后 getUpdates 获取"></div>
+    </div>
+    <div class="field" style="max-width:360px">
+      <label>推送整点 <span style="color:var(--sub)">对所有渠道生效</span></label>
+      <input type="text" id="set-push-hour" placeholder="如 21，只在 21 点那次执行推送；留空每次都推">
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px">
+      <button class="btn primary" onclick="testPush()" style="padding:10px 18px">🔔 测试推送</button>
+      <button class="btn primary" onclick="saveSettings()" style="padding:10px 18px">💾 保存设置</button>
+    </div>
+    <div class="test-hint">用当前填写的配置立即发一条测试消息，不需要先保存；未填写的渠道自动跳过，不受「推送整点」限制</div>
+  </div>
+
+  <div class="card">
+    <div class="sec-title"><h2><span class="ico">📋</span>运行日志</h2></div>
+    <div class="sec-hint">保留最近 300 条：签到、登录检测、过期、自动重登、推送记录</div>
+    <div id="log-list"><div class="empty">暂无日志</div></div>
+  </div>
+</div>
+
+<!-- 添加账号弹窗 -->
+<div class="modal-mask" id="add-mask" onclick="if(event.target===this)closeAdd()">
+  <div class="modal">
+    <h2 style="font-size:16px;margin-bottom:14px">添加账号</h2>
+    <div class="tabs">
+      <div class="tab active" data-tab="qr" onclick="switchTab('qr')">扫码登录</div>
+      <div class="tab" data-tab="cookie" onclick="switchTab('cookie')">粘贴 Cookie</div>
+      <div class="tab" data-tab="pwd" onclick="switchTab('pwd')">账号密码</div>
+    </div>
+
+    <div class="tabpane active" id="pane-qr">
+      <div class="hint">用微博手机 APP「扫一扫」扫描下方二维码完成登录，登录后 Cookie 自动保存到本地。</div>
+      <div class="qr-box">
+        <img id="qr-img" alt="二维码加载中...">
+        <div class="qr-status" id="qr-status">正在获取二维码...</div>
+      </div>
+    </div>
+
+    <div class="tabpane" id="pane-cookie">
+      <div class="hint">在电脑浏览器登录 weibo.com → F12 → 应用/Application → Cookie，复制全部 Cookie（或手机抓包 m.weibo.cn 的 Cookie），粘贴到下方。</div>
+      <div class="field"><textarea id="cookie-input" placeholder="SUB=xxx; SUBP=xxx; ..."></textarea></div>
+      <button class="btn primary" style="width:100%" onclick="loginCookie()">验证并保存</button>
+    </div>
+
+    <div class="tabpane" id="pane-pwd">
+      <div class="hint">实验性功能：微博密码登录可能触发风控或验证码，失败时请改用扫码登录。<br>勾选"记住密码"后，Cookie 过期时会自动用密码重新登录。</div>
+      <div class="field"><label>账号（手机号 / 邮箱）</label>
+        <input type="text" id="pwd-user" autocomplete="off"></div>
+      <div class="field"><label>密码</label>
+        <input type="password" id="pwd-pass"></div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="pwd-remember" checked>
+        <label for="pwd-remember">记住密码（用于登录过期后自动重登）</label>
+      </div>
+      <button class="btn primary" style="width:100%" onclick="loginPassword()">登录</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+let qrTimer = null, qrQrid = null;
+
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove('show'), 2600);
+}
+function logout(){
+  if(!confirm('退出登录？')) return;
+  fetch('/api/auth/logout', {method:'POST'}).finally(()=>location.href='/login');
+}
+async function api(url, opts){
+  let r;
+  try{
+    r = await fetch(url, opts && {...opts, headers:{'Content-Type':'application/json', ...(opts.headers||{})}});
+  }catch(e){
+    throw new Error('无法连接服务，请通过 http://127.0.0.1:8787 访问（直接打开 html 文件是没有后端的）');
+  }
+  if(r.status === 401){ location.href = '/login'; throw new Error('未登录'); }
+  const j = await r.json();
+  if (r.status >= 400) throw new Error(j.detail || j.msg || '请求失败');
+  return j;
+}
+const esc = s => String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ts2s = ts => ts ? new Date(ts*1000).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '-';
+
+/* ---------------- 账号 ---------------- */
+async function loadAccounts(){
+  try{
+    const j = await api('/api/accounts');
+    const list = $('#acc-list');
+    if(!j.accounts.length){ list.innerHTML = '<div class="empty">还没有账号，点击右上角"添加账号"开始</div>'; return; }
+    list.innerHTML = j.accounts.map(a=>{
+      const name = esc(a.nickname || a.remark || ('微博用户 ' + (a.uid||a.id)));
+      const initial = name.replace(/^微博用户\s*/,'').charAt(0) || '?';
+      const expired = a.status === 'expired';
+      const r = a.last_result;
+      let line = '';
+      if(r){
+        line = `最近签到: <b>${ts2s(r.ts)}</b> · 共 <b>${r.total}</b> 个超话：本次成功 <b style="color:var(--ok)">${r.success}</b> 个，失败 <b style="color:${r.failed.length?'var(--bad)':'var(--sub)'}">${r.failed.length}</b> 个，之前已签 ${r.done_before} 个`;
+        if(r.failed.length) line += `<br><span style="color:var(--bad)">失败: ${esc(r.failed.slice(0,3).join('；'))}</span>`;
+      } else line = '尚未签到，点击「立即签到」试试';
+      return `<div class="card" style="margin-bottom:10px;background:var(--bg);border-radius:10px">
+        <div class="acc">
+          <div class="avatar">${esc(initial)}</div>
+          <div class="acc-info">
+            <div class="acc-name">${name}
+              <span class="badge ${expired?'expired':'ok'}">${expired?'已过期':'正常'}</span>
+              ${a.has_password?'<span class="badge pwd">支持自动重登</span>':''}
+            </div>
+            <div class="acc-meta">UID: ${esc(a.uid||'-')} · 登录检测: ${ts2s(a.last_alive)}</div>
+          </div>
+          <div class="acc-ops">
+            <button class="btn primary sm" onclick="checkin('${a.id}', this)">立即签到</button>
+            <button class="btn sm" onclick="checkLogin('${a.id}')">检测登录</button>
+            <button class="btn danger sm" onclick="delAcc('${a.id}')">删除</button>
+          </div>
+        </div>
+        <div class="result-line">${line}</div>
+      </div>`;
+    }).join('');
+  }catch(e){ toast('加载账号失败: '+e.message); }
+}
+
+async function loadStats(){
+  try{
+    const j = await api('/api/stats');
+    $('#st-acc').textContent = j.accounts;
+    $('#st-expired').textContent = j.expired;
+    const num = $('#st-checked'), lab = $('#st-checked-label'), sub = $('#st-checked-sub');
+    if(!j.accounts){                       // 还没有账号
+      num.textContent = '0'; lab.textContent = '今日签到'; sub.innerHTML = '&nbsp;';
+    }else if(j.accounts === 1){            // 单账号: 主数字直接显示签到的超话数
+      num.textContent = j.today_success;
+      lab.textContent = '今日已签超话';
+      sub.textContent = `账号已签 ${j.checked_today}/1 · 失败 ${j.today_failed} 个`;
+    }else{                                 // 多账号: 主数字显示账号进度, 副行汇总超话
+      num.textContent = `${j.checked_today}/${j.accounts}`;
+      lab.textContent = '今日已签账号';
+      sub.textContent = `成功 ${j.today_success} · 失败 ${j.today_failed} 个超话`;
+    }
+  }catch(e){}
+}
+
+async function loadLogs(){
+  try{
+    const j = await api('/api/logs');
+    const list = $('#log-list');
+    if(!j.logs.length){ list.innerHTML = '<div class="empty">暂无日志</div>'; return; }
+    list.innerHTML = j.logs.map(l=>{
+      const t = new Date(l.ts*1000).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+      return `<div class="log-item"><span class="t">${t}</span><span class="k-${esc(l.kind)}">[${esc(l.kind)}]</span> ${esc(l.message)}</div>`;
+    }).join('');
+  }catch(e){}
+}
+
+function loadAll(){ loadAccounts(); loadStats(); loadLogs(); loadSettings(); }
+
+async function checkin(id, btn){
+  if(btn){ btn.disabled = true; btn.textContent = '签到中...'; }
+  try{
+    const j = await api(`/api/accounts/${id}/checkin`, {method:'POST'});
+    if(j.ok){
+      const r = j.result;
+      toast(`签到完成: 新签${r.success}个, 失败${r.failed.length}个`);
+    } else toast(j.msg || '签到失败');
+  }catch(e){ toast('签到失败: '+e.message); }
+  loadAll();
+  if(btn){ btn.disabled = false; btn.textContent = '立即签到'; }
+}
+
+async function checkinAll(){
+  await api('/api/checkin/all', {method:'POST'});
+  toast('已开始全部签到，完成后会收到推送');
+  setTimeout(loadAll, 4000);
+}
+
+async function checkLogin(id){
+  try{
+    const j = await api(`/api/accounts/${id}/check_login`, {method:'POST'});
+    toast(j.login ? '登录状态正常 ✓' : '登录已过期，请重新扫码');
+  }catch(e){ toast('检测失败: '+e.message); }
+  loadAll();
+}
+
+async function delAcc(id){
+  if(!confirm('确定删除该账号？其登录信息将从本地清除。')) return;
+  await api(`/api/accounts/${id}`, {method:'DELETE'});
+  toast('已删除'); loadAll();
+}
+
+/* ---------------- 添加账号 ---------------- */
+function openAdd(){ $('#add-mask').classList.add('show'); startQR(); }
+function closeAdd(){ $('#add-mask').classList.remove('show'); stopQR(); loadAll(); }
+
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
+  document.querySelectorAll('.tabpane').forEach(p=>p.classList.remove('active'));
+  $('#pane-'+name).classList.add('active');
+  if(name==='qr') startQR(); else stopQR();
+}
+
+function startQR(){
+  if(qrTimer) return;
+  getQR();
+  qrTimer = setInterval(pollQR, 2000);
+}
+function stopQR(){ if(qrTimer){ clearInterval(qrTimer); qrTimer=null; } }
+
+async function getQR(){
+  $('#qr-status').textContent = '正在获取二维码...';
+  $('#qr-status').className = 'qr-status';
+  try{
+    const j = await api('/api/login/qrcode', {method:'POST'});
+    qrQrid = j.qrid;
+    $('#qr-img').src = 'data:image/png;base64,' + j.image;
+    $('#qr-status').textContent = '请用微博 APP 扫一扫';
+  }catch(e){
+    $('#qr-status').textContent = '获取失败: ' + e.message;
+  }
+}
+
+async function pollQR(){
+  if(!qrQrid) return;
+  try{
+    const j = await api('/api/login/qrcode/check?qrid='+qrQrid);
+    const st = $('#qr-status');
+    if(j.status === 'scanned'){ st.textContent = '已扫码，请在手机上确认登录'; st.className='qr-status scanned'; }
+    else if(j.status === 'confirmed'){
+      st.textContent = '✓ 登录成功: ' + (j.account?.nickname || '');
+      st.className = 'qr-status confirmed';
+      stopQR(); qrQrid = null;
+      setTimeout(closeAdd, 1200);
+      toast('账号添加成功');
+    }
+    else if(j.status === 'expired'){ qrQrid = null; getQR(); }
+  }catch(e){}
+}
+
+async function loginCookie(){
+  const cookie = $('#cookie-input').value.trim();
+  if(!cookie) return toast('请先粘贴 Cookie');
+  try{
+    const j = await api('/api/login/cookie', {method:'POST', body:JSON.stringify({cookie})});
+    if(j.ok){ toast('添加成功: ' + j.account.nickname); closeAdd(); }
+    else toast(j.msg || 'Cookie 无效');
+  }catch(e){ toast('失败: '+e.message); }
+}
+
+async function loginPassword(){
+  const username = $('#pwd-user').value.trim(), password = $('#pwd-pass').value;
+  if(!username || !password) return toast('请输入账号和密码');
+  try{
+    const j = await api('/api/login/password', {method:'POST', body:JSON.stringify({
+      username, password, remember: $('#pwd-remember').checked})});
+    if(j.ok){ toast('登录成功: ' + j.account.nickname); closeAdd(); }
+    else toast(j.msg || '登录失败');
+  }catch(e){ toast('失败: '+e.message); }
+}
+
+/* ---------------- 设置 ---------------- */
+async function loadSettings(){
+  try{
+    const j = await api('/api/settings');
+    const s = j.settings, p = s.push;
+    $('#set-daily').checked = s.enable_daily;
+    $('#set-time').value = s.checkin_time;
+    $('#set-push-checkin').checked = s.push_on_checkin;
+    $('#set-push-expired').checked = s.push_on_expired;
+    $('#set-relogin').checked = s.auto_relogin;
+    $('#push-serverchan').value = p.serverchan || '';
+    $('#push-bark').value = p.bark || '';
+    $('#push-pushplus').value = p.pushplus || '';
+    $('#push-wecom').value = p.wecom_webhook || '';
+    $('#push-tg-token').value = p.tg_bot_token || '';
+    $('#push-tg-chat').value = p.tg_chat_id || '';
+    $('#set-push-hour').value = s.push_hour || '';
+    const nr = $('#next-run');
+    nr.textContent = s.enable_daily ? '每日 ' + s.checkin_time + ' 自动签到' : '自动签到已关闭';
+  }catch(e){}
+}
+
+async function saveSettings(){
+  const s = (s)=>!!$('#'+s).checked;
+  try{
+    await api('/api/settings', {method:'POST', body:JSON.stringify({
+      enable_daily: s('set-daily'),
+      checkin_time: ($('#set-time').value || '09:00').slice(0, 5),
+      push_on_checkin: s('set-push-checkin'),
+      push_on_expired: s('set-push-expired'),
+      auto_relogin: s('set-relogin'),
+      push: {
+        serverchan: $('#push-serverchan').value.trim(),
+        bark: $('#push-bark').value.trim(),
+        pushplus: $('#push-pushplus').value.trim(),
+        wecom_webhook: $('#push-wecom').value.trim(),
+        tg_bot_token: $('#push-tg-token').value.trim(),
+        tg_chat_id: $('#push-tg-chat').value.trim(),
+      },
+      push_hour: $('#set-push-hour').value.trim()
+    })});
+    toast('设置已保存');
+  }catch(e){ toast('保存失败: '+e.message); }
+  loadStats();
+}
+
+async function testPush(){
+  try{
+    // 用当前表单里填的值直接测试, 不需要先保存
+    const j = await api('/api/push/test', {method:'POST', body:JSON.stringify({push:{
+      serverchan: $('#push-serverchan').value.trim(),
+      bark: $('#push-bark').value.trim(),
+      pushplus: $('#push-pushplus').value.trim(),
+      wecom_webhook: $('#push-wecom').value.trim(),
+      tg_bot_token: $('#push-tg-token').value.trim(),
+      tg_chat_id: $('#push-tg-chat').value.trim(),
+    }})});
+    if(!j.ok) return toast(j.msg || '请先填写推送 Key');
+    const lines = j.results.map(([name, r]) =>
+      `${name}: ${r === 'ok' ? '✓ 成功，请查看手机' : '✗ ' + r}`);
+    alert('测试推送结果：\n\n' + lines.join('\n'));
+  }catch(e){ toast('测试失败: '+e.message); }
+}
+
+loadAll();
+setInterval(loadStats, 30000);
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+services:
+  weibo-checkin:
+    build: .
+    container_name: weibo-checkin
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      - TZ=Asia/Shanghai
+      # ===== 面板登录账号密码, 部署时在这里填写 =====
+      - PANEL_USER=admin
+      - PANEL_PASSWORD=请改成你的强密码
+    volumes:
+      # 账号 Cookie / 设置 / 日志 全部存在 data/ 里, 必须挂载出来,
+      # 否则容器重建后要重新扫码登录
+      - ./data:/app/data

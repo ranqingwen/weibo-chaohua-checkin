@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - 微博超话签到面板</title>
+<link rel="icon" type="image/svg+xml" href="/static/weibo.svg">
+<link rel="apple-touch-icon" href="/static/weibo.svg">
+<style>
+:root{
+  --bg:#f4f5f7; --card:#ffffff; --text:#1f2329; --sub:#8a919f;
+  --line:#e8eaee; --primary:#e6713a;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#14161a; --card:#1e2127; --text:#e8eaf0; --sub:#8a919f; --line:#2c3038; }
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);
+  font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:18px;
+  padding:36px 30px;width:100%;max-width:360px}
+h1{font-size:18px;text-align:center;margin-bottom:6px;display:flex;align-items:center;justify-content:center;gap:8px}
+h1 .logo{display:inline-flex;align-items:center;flex-shrink:0}
+h1 .logo img{display:block}
+.sub{text-align:center;color:var(--sub);font-size:12px;margin-bottom:26px}
+.sub.warn{color:var(--primary)}
+.field{margin-bottom:14px}
+label{display:block;font-size:12px;color:var(--sub);margin-bottom:6px}
+input{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:10px;
+  padding:12px 14px;color:var(--text);font-size:14px;outline:none}
+input:focus{border-color:var(--primary)}
+button{width:100%;border:none;border-radius:10px;padding:12px;font-size:14px;
+  background:var(--primary);color:#fff;cursor:pointer;margin-top:6px}
+button:disabled{opacity:.6;cursor:not-allowed}
+.err{color:#d44;font-size:12px;text-align:center;margin-top:12px;min-height:16px}
+@media (prefers-color-scheme: dark){ input{color-scheme:dark} }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1><img class="logo" src="/static/weibo.svg" alt="微博" width="26" height="26">微博超话签到面板</h1>
+  <div class="sub" id="sub">请输入账号和密码</div>
+
+  <form onsubmit="doLogin(event)">
+    <div class="field">
+      <label>账号</label>
+      <input type="text" id="user" autocomplete="username" autofocus>
+    </div>
+    <div class="field">
+      <label>密码</label>
+      <input type="password" id="pwd" autocomplete="current-password">
+    </div>
+    <button type="submit" id="btn">进入面板</button>
+    <div class="err" id="err"></div>
+  </form>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+async function init(){
+  try{
+    const j = await (await fetch('/api/auth/status')).json();
+    if(j.authed){ location.href = '/'; return; }
+    if(j.random_mode){
+      const s = $('#sub');
+      s.textContent = '未配置 PANEL_PASSWORD，本次启动已生成随机密码（见服务端控制台）';
+      s.className = 'sub warn';
+    }
+  }catch(e){
+    $('#sub').textContent = '服务连接失败：请确认已通过 http://127.0.0.1:8787 访问（直接打开 html 文件没有后端）';
+  }
+}
+
+async function doLogin(e){
+  e.preventDefault();
+  const user = $('#user').value.trim(), pwd = $('#pwd').value;
+  const btn = $('#btn'), err = $('#err');
+  if(!user || !pwd) { err.textContent = '请输入账号和密码'; return; }
+  btn.disabled = true; err.textContent = '';
+  try{
+    const r = await fetch('/api/auth/login', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({username: user, password: pwd})});
+    const j = await r.json();
+    if(r.ok && j.ok){ location.href = '/'; return; }
+    err.textContent = j.detail || '账号或密码错误';
+  }catch(ex){ err.textContent = '网络错误'; }
+  btn.disabled = false;
+}
+init();
+</script>
+</body>
+</html>

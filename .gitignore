@@ -1,0 +1,19 @@
+# 运行数据：含 Cookie、密码等敏感信息，严禁提交
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# WorkBuddy 工作区数据
+.workbuddy/
