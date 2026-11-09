@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>微博超话签到面板</title>
 <link rel="icon" type="image/svg+xml" href="/static/weibo.svg">
 <link rel="apple-touch-icon" href="/static/weibo.svg">
@@ -18,21 +18,22 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
-  min-height:100vh;padding-bottom:60px}
+  min-height:100vh;padding-bottom:60px;overflow-x:hidden}
 /* 顶栏 */
 .topbar{position:sticky;top:0;z-index:40;background:var(--bar);border-bottom:1px solid var(--line)}
 .topbar-in{max-width:960px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;
   justify-content:space-between;gap:10px}
-h1{font-size:19px;font-weight:700;display:flex;align-items:center;gap:8px}
+h1{font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px}
 h1 .logo{display:inline-flex;align-items:center;flex-shrink:0}
 h1 .logo img{display:block}
 .top-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.nextbar{max-width:960px;margin:0 auto;padding:0 20px 8px;text-align:center}
 .next-run{font-size:12px;color:var(--sub)}
 .wrap{max-width:960px;margin:0 auto;padding:22px 20px}
 .muted{color:var(--sub);font-size:12px}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
 .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
-.stat .num{font-size:22px;font-weight:700}
+.stat .num{font-size:20px;font-weight:700}
 .stat .label{font-size:12px;color:var(--sub);margin-top:2px}
 .stat .sub{font-size:11px;color:var(--sub);margin-top:2px;min-height:14px;opacity:.85}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:16px}
@@ -57,7 +58,7 @@ h1 .logo img{display:block}
 .badge.expired{background:rgba(221,68,68,.12);color:var(--bad)}
 .badge.pwd{background:rgba(217,134,52,.14);color:var(--warn)}
 .acc-ops{display:flex;gap:6px;flex-wrap:wrap}
-.result-line{font-size:12px;color:var(--sub);margin-top:8px;line-height:1.7}
+.result-line{font-size:12px;color:var(--sub);margin-top:8px;line-height:1.7;overflow-wrap:anywhere}
 .result-line b{color:var(--text)}
 .empty{text-align:center;color:var(--sub);font-size:13px;padding:30px 0}
 /* modal */
@@ -76,11 +77,11 @@ h1 .logo img{display:block}
 .qr-status.scanned{color:var(--warn)}
 .qr-status.confirmed{color:var(--ok)}
 textarea,input[type=text],input[type=password],input[type=time]{
-  width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;
-  padding:10px 12px;color:var(--text);font-size:13px;outline:none;font-family:inherit}
-textarea{height:90px;resize:vertical}
-.field{margin-bottom:12px}
-.field label{display:block;font-size:12px;color:var(--sub);margin-bottom:6px}
+  width:100%;background:var(--bg);border:1px solid var(--line);border-radius:7px;
+  padding:7px 10px;color:var(--text);font-size:13px;line-height:1.5;outline:none;font-family:inherit}
+textarea{height:84px;resize:vertical}
+.field{margin-bottom:11px}
+.field label{display:block;font-size:12px;color:var(--sub);margin-bottom:5px}
 .checkbox-row{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px}
 .hint{font-size:12px;color:var(--sub);line-height:1.7;margin-bottom:10px}
 /* settings */
@@ -89,15 +90,23 @@ textarea{height:90px;resize:vertical}
 .set-row:last-child{border-bottom:none}
 .set-row .lab{font-size:13px}
 .set-row .lab small{display:block;color:var(--sub);font-size:11px;margin-top:2px}
-input[type=time]{width:110px}
+/* 时间选择: 小时 + 分钟下拉, 避免原生控件显示秒 */
+.time-pick{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.time-pick select{width:74px;background:var(--bg);border:1px solid var(--line);border-radius:8px;
+  padding:9px 6px;color:var(--text);font-size:13px;outline:none;text-align:center;
+  -webkit-appearance:none;appearance:none}
+.time-pick .colon{color:var(--sub);font-size:13px}
 .push-title{font-size:12px;color:var(--sub);margin:12px 0 8px;padding-top:10px;border-top:1px solid var(--line)}
 .push-title{font-size:13px;color:var(--text);font-weight:600;margin:18px 0 12px;
   padding-top:14px;border-top:1px solid var(--line)}
-.push-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.push-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 14px}
+.push-grid .field{min-width:0}
+.push-grid input{max-width:100%}
 @media (max-width:620px){.push-grid{grid-template-columns:1fr}}
 .test-hint{font-size:12px;color:var(--sub);margin-top:8px;line-height:1.7}
 /* logs */
-.log-item{font-size:12px;padding:7px 0;border-bottom:1px dashed var(--line);line-height:1.6}
+.log-item{font-size:12px;padding:7px 0;border-bottom:1px dashed var(--line);line-height:1.6;
+  word-break:break-all;overflow-wrap:anywhere}
 .log-item .t{color:var(--sub);margin-right:8px;font-family:ui-monospace,monospace}
 .k-checkin{color:var(--ok)} .k-error,.k-expired{color:var(--bad)} .k-warn{color:var(--warn)}
 /* toast */
@@ -107,26 +116,31 @@ input[type=time]{width:110px}
 #toast.show{opacity:.95}
 /* 移动端适配 */
 @media (max-width:620px){
-  .topbar-in{padding:10px 12px}
-  h1{font-size:16px}
-  h1 .logo img{width:22px;height:22px}
-  .next-run{display:none}
-  .wrap{padding:14px 12px}
+  .topbar-in{padding:9px 12px}
+  h1{font-size:15px}
+  h1 .logo img{width:21px;height:21px}
+  .nextbar{padding:0 12px 7px}
+  .next-run{font-size:11px}
+  .wrap{padding:12px 10px}
   .stats{gap:8px}
-  .stat{padding:10px 8px;border-radius:10px}
-  .stat .num{font-size:18px}
-  .card{padding:14px 12px;border-radius:12px;margin-bottom:12px}
-  .sec-hint{margin-bottom:12px}
-  .acc{gap:10px}
-  .avatar{width:38px;height:38px;font-size:15px}
-  .acc-info{min-width:110px}
+  .stat{padding:9px 8px;border-radius:10px}
+  .stat .num{font-size:17px}
+  .card{padding:13px 11px;border-radius:12px;margin-bottom:11px}
+  .sec-title h2{font-size:14px}
+  .sec-hint{margin-bottom:11px}
+  .acc{gap:9px}
+  .avatar{width:34px;height:34px;font-size:14px}
+  .acc-name{font-size:13px}
+  .acc-info{min-width:104px}
   .acc-ops{width:100%}
-  .acc-ops .btn{flex:1;padding:7px 6px;text-align:center}
-  .modal{padding:16px;border-radius:14px}
-  /* 16px 以上避免 iOS 聚焦自动放大 */
-  input,textarea{font-size:16px !important}
-  input[type=time]{width:110px}
+  .acc-ops .btn{flex:1;padding:6px 6px;text-align:center;font-size:12px}
+  .modal{padding:15px;border-radius:14px}
+  /* 紧凑字号: 配合 viewport maximum-scale 避免 iOS 聚焦放大 */
+  input,textarea{font-size:14px !important}
   .set-row .lab{font-size:12px}
+  .btn{font-size:12.5px;padding:7px 13px}
+  .btn.sm{padding:5px 9px;font-size:11.5px}
+  .log-item{font-size:11.5px}
 }
 @media (max-width:380px){
   .stats{grid-template-columns:repeat(3,1fr)}
@@ -139,11 +153,11 @@ input[type=time]{width:110px}
   <div class="topbar-in">
     <h1><img class="logo" src="/static/weibo.svg" alt="微博" width="26" height="26">微博超话签到面板</h1>
     <div class="top-right">
-      <span class="next-run" id="next-run"></span>
       <button class="btn sm" onclick="loadAll()">🔄 刷新</button>
       <button class="btn sm" onclick="logout()">⏻ 退出</button>
     </div>
   </div>
+  <div class="nextbar"><span class="next-run" id="next-run"></span></div>
 </div>
 
 <div class="wrap">
@@ -174,7 +188,11 @@ input[type=time]{width:110px}
     </div>
     <div class="set-row">
       <div class="lab">签到时间</div>
-      <input type="time" id="set-time">
+      <div class="time-pick">
+        <select id="set-time-h" aria-label="小时"></select>
+        <span class="colon">:</span>
+        <select id="set-time-m" aria-label="分钟"></select>
+      </div>
     </div>
     <div class="set-row">
       <div class="lab">签到结果推送到手机<small>Server酱 / Bark / PushPlus / 企业微信 / Telegram</small></div>
@@ -464,12 +482,23 @@ async function loginPassword(){
 }
 
 /* ---------------- 设置 ---------------- */
+function fillTimeOptions(){
+  const h = $('#set-time-h'), m = $('#set-time-m');
+  if(h.options.length) return;
+  const pad = n => String(n).padStart(2, '0');
+  for(let i = 0; i < 24; i++) h.add(new Option(pad(i), pad(i)));
+  for(let i = 0; i < 60; i++) m.add(new Option(pad(i), pad(i)));
+}
+
 async function loadSettings(){
   try{
     const j = await api('/api/settings');
     const s = j.settings, p = s.push;
+    fillTimeOptions();
     $('#set-daily').checked = s.enable_daily;
-    $('#set-time').value = s.checkin_time;
+    const t = String(s.checkin_time || '09:00').slice(0, 5).split(':');
+    $('#set-time-h').value = t[0] || '09';
+    $('#set-time-m').value = t[1] || '00';
     $('#set-push-checkin').checked = s.push_on_checkin;
     $('#set-push-expired').checked = s.push_on_expired;
     $('#set-relogin').checked = s.auto_relogin;
@@ -480,17 +509,25 @@ async function loadSettings(){
     $('#push-tg-token').value = p.tg_bot_token || '';
     $('#push-tg-chat').value = p.tg_chat_id || '';
     $('#set-push-hour').value = s.push_hour || '';
-    const nr = $('#next-run');
-    nr.textContent = s.enable_daily ? '每日 ' + s.checkin_time + ' 自动签到' : '自动签到已关闭';
+    updateNextRun(s);
   }catch(e){}
+}
+
+function updateNextRun(s){
+  const nr = $('#next-run');
+  if(!nr) return;
+  let t = s.enable_daily ? '⏰ 每日 ' + String(s.checkin_time).slice(0,5) + ' 自动签到' : '⏸ 自动签到已关闭';
+  const ph = String(s.push_hour || '').trim();
+  if (s.push_on_checkin && ph !== '' && !isNaN(+ph)) t += ' · ' + ph + ' 点推送';
+  nr.textContent = t;
 }
 
 async function saveSettings(){
   const s = (s)=>!!$('#'+s).checked;
   try{
-    await api('/api/settings', {method:'POST', body:JSON.stringify({
+    const j = await api('/api/settings', {method:'POST', body:JSON.stringify({
       enable_daily: s('set-daily'),
-      checkin_time: ($('#set-time').value || '09:00').slice(0, 5),
+      checkin_time: ($('#set-time-h').value || '09') + ':' + ($('#set-time-m').value || '00'),
       push_on_checkin: s('set-push-checkin'),
       push_on_expired: s('set-push-expired'),
       auto_relogin: s('set-relogin'),
@@ -504,6 +541,7 @@ async function saveSettings(){
       },
       push_hour: $('#set-push-hour').value.trim()
     })});
+    if (j && j.settings) updateNextRun(j.settings);   // 顶栏立即更新, 无需刷新
     toast('设置已保存');
   }catch(e){ toast('保存失败: '+e.message); }
   loadStats();
@@ -529,6 +567,20 @@ async function testPush(){
 
 loadAll();
 setInterval(loadStats, 30000);
+
+/* 手机端换用短 placeholder, 避免长提示语在窄输入框里被截断 */
+if (window.matchMedia('(max-width: 620px)').matches){
+  const SHORT = {
+    'push-pushplus':   'pushplus.plus 微信登录后复制',
+    'push-wecom':      '企业微信群机器人 Webhook 的 key= 值',
+    'push-serverchan': 'SCT 开头, sct.ftqq.com 获取',
+    'push-bark':       'iPhone 装 Bark APP 复制',
+    'push-tg-token':   '@BotFather 创建机器人获取',
+    'push-tg-chat':    '给机器人发消息后 getUpdates 获取',
+    'set-push-hour':   '如 21; 留空每次都推',
+  };
+  for (const id in SHORT){ const el = document.getElementById(id); if (el) el.placeholder = SHORT[id]; }
+}
 </script>
 </body>
 </html>

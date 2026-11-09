@@ -497,8 +497,13 @@ def api_push_test(body: PushTestBody = None):
     results = notifier.push("微博签到面板·测试推送",
                             "这是一条测试消息。收到即说明该渠道配置成功 ✓\n\n"
                             "之后签到完成和登录过期提醒都会推送到这里。", cfg=cfg)
+    def _brief(r: str) -> str:
+        """渠道返回的错误可能是一大段 JSON, 日志里只保留可读摘要。"""
+        r = " ".join(str(r).split())
+        return r if len(r) <= 60 else r[:60] + "…"
+
     store.append_log("info", "测试推送: %s" %
-                     (", ".join("%s=%s" % (n, r) for n, r in results) or "无"))
+                     (", ".join("%s=%s" % (n, _brief(r)) for n, r in results) or "无"))
     return {"ok": True, "results": results}
 
 
