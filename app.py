@@ -6,6 +6,7 @@
 import datetime
 import threading
 import time
+import traceback
 import webbrowser
 
 import uvicorn
@@ -58,12 +59,18 @@ def _fmt_ts(ts) -> str:
 
 def run_checkin_account(acc: dict, trigger: str = "手动") -> dict:
     """对单个账号执行: 登录检测 -> (过期则自动重登) -> 拉取超话 -> 签到。"""
+    name = acc.get("nickname") or acc.get("remark") or ("微博用户" + (acc.get("uid") or acc["id"]))
     with _lock:
         if acc["id"] in _running:
             return {"ok": False, "msg": "该账号正在签到中"}
         _running.add(acc["id"])
     try:
         return _do_checkin(acc, trigger)
+    except Exception as e:
+        # 任何未预料的异常都不该变成 500 空白页, 统一转成可读消息并落日志
+        traceback.print_exc()
+        store.append_log("error", "账号【%s】签到异常: %s" % (name, str(e)[:200]))
+        return {"ok": False, "msg": "签到异常: %s" % (str(e)[:160] or e.__class__.__name__)}
     finally:
         with _lock:
             _running.discard(acc["id"])
@@ -334,6 +341,30 @@ def api_checkin(acc_id: str):
     return res
 
 
+@app.post("/api/accounts/{acc_id}/detect")
+def api_detect(acc_id: str):
+    """只检测签到状态, 不执行签到 (不会产生任何签到请求)。"""
+    acc = store.find_account(acc_id)
+    if not acc:
+        raise HTTPException(404, "账号不存在")
+    name = acc.get("nickname") or acc.get("remark") or ("微博用户" + (acc.get("uid") or acc_id))
+    try:
+        client = WeiboClient(acc["cookies"])
+        info = client.login_info()
+        if not info["login"]:
+            store.update_account(acc_id, status="expired", last_alive=time.time())
+            return {"ok": False, "msg": "登录已过期，请重新扫码登录", "expired": True}
+        d = client.detect()
+        store.update_account(acc_id, status="ok", last_alive=time.time())
+        store.append_log("info", "账号【%s】签到检测: 共%d个超话, 已签%d, 待签%d"
+                         % (name, d["total"], d["done"], len(d["pending"])))
+        return {"ok": True, **d}
+    except Exception as e:
+        traceback.print_exc()
+        store.append_log("error", "账号【%s】检测异常: %s" % (name, str(e)[:200]))
+        return {"ok": False, "msg": "检测失败: %s" % (str(e)[:160] or e.__class__.__name__)}
+
+
 @app.post("/api/accounts/{acc_id}/check_login")
 def api_check_login(acc_id: str):
     acc = store.find_account(acc_id)
@@ -388,16 +419,26 @@ def api_qr_create():
 def api_qr_check(qrid: str):
     qr = qr_store.get(qrid)
     if not qr:
-        return {"ok": False, "status": "expired"}
-    status, payload = qr.poll()
+        return {"ok": False, "status": "expired", "msg": "二维码已失效, 请重新获取"}
+    try:
+        status, payload = qr.poll()
+    except Exception as e:
+        return {"ok": False, "status": "failed", "msg": "轮询异常: %s" % str(e)[:80]}
     if status != "confirmed":
         return {"ok": True, "status": status}
     qr_store.pop(qrid, None)
+    last = getattr(qr, "last", {}) or {}
     if not payload:
-        return {"ok": False, "status": "failed", "msg": "换取登录 Cookie 失败, 请重试"}
+        store.append_log("login", "扫码确认后换取 Cookie 失败 (retcode=%s)" % last.get("retcode"))
+        return {"ok": False, "status": "failed",
+                "msg": "已确认但换取登录 Cookie 失败, 请重试"}
+    if not any(k in payload for k in ("SUB", "SUBP", "ALF")):
+        store.append_log("login", "扫码返回的 Cookie 不完整: %s" % ",".join(list(payload)[:8]))
+        return {"ok": False, "status": "failed", "msg": "登录 Cookie 不完整, 请重试"}
     client = WeiboClient(payload)
     info = client.login_info()
     if not info["login"]:
+        store.append_log("login", "扫码 Cookie 校验未通过 (retcode=%s)" % last.get("retcode"))
         return {"ok": False, "status": "failed", "msg": "登录 Cookie 校验未通过, 请重试"}
     uid = info.get("uid", "")
     nick = client.get_nickname(uid)

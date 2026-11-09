@@ -62,6 +62,7 @@ class QRLogin:
             raise RuntimeError("获取登录二维码失败: %s" % data)
         self.qrid = data["data"]["qrid"]
         self.created_at = time.time()
+        self.last = {"retcode": None, "msg": ""}   # 最近一次 check 原始返回
         self.image = self._download_image(data["data"].get("image", ""))
 
     def _download_image(self, image_field: str) -> str:
@@ -78,6 +79,14 @@ class QRLogin:
             raise RuntimeError("下载二维码图片失败")
         return image_field  # 已是 base64
 
+    # 微博扫码状态码, 与 passport 官方前端 (login.js) 完全对齐:
+    #   50114001 未使用(还没扫码) / 50114002 已扫码待确认
+    #   50114003 50114004 50114015 失效 / 20000000 确认成功(data.url 可跳转)
+    RET_WAIT = 50114001
+    RET_SCANNED = 50114002
+    RET_INVALID = (50114003, 50114004, 50114015)
+    RET_OK = 20000000
+
     def poll(self):
         """轮询扫码状态。
 
@@ -87,54 +96,102 @@ class QRLogin:
         - ("confirmed", cookies) 已确认, 返回 Cookie 字典
         - ("expired", None)   二维码过期
         """
-        r = self.session.get(
-            "https://passport.weibo.com/sso/v2/qrcode/check",
-            params={"qrid": self.qrid}, timeout=15)
+        self.last = {}
         try:
+            r = self.session.get(
+                "https://passport.weibo.com/sso/v2/qrcode/check",
+                params={"qrid": self.qrid, "_": int(time.time() * 1000)},
+                timeout=15)
             data = _parse_jsonp(r.text)
-        except (ValueError, json.JSONDecodeError):
+        except (requests.RequestException, ValueError, json.JSONDecodeError) as e:
+            self.last = {"retcode": None, "msg": str(e)[:80]}
             return "waiting", None
-        ret = data.get("retcode")
-        if ret == 20000001:
+        try:
+            ret = int(data.get("retcode"))
+        except (TypeError, ValueError):
+            ret = None
+        # 记录最近一次原始返回, 便于 /api/logs 排查
+        self.last = {"retcode": ret, "msg": data.get("msg")}
+
+        if ret in (self.RET_WAIT, 20000001):          # 20000001 为旧版状态码
             return "waiting", None
-        if ret == 20000019:
+        if ret in (self.RET_SCANNED, 20000019):
             return "scanned", None
-        if ret == 20000000 and data.get("data"):
-            url = data["data"].get("url") or data["data"].get("alt")
-            if url:
-                return "confirmed", self._exchange(url)
-        if ret in (20000021, 20000022, 10005):
+        if ret in self.RET_INVALID or ret in (20000021, 20000022, 10005):
             return "expired", None
+        if ret == self.RET_OK:
+            d = data.get("data") or {}
+            url = d.get("url") or d.get("alt") or ""
+            if not url:
+                return "confirmed", {}
+            return "confirmed", self._exchange(url)
         return "waiting", None
 
     def _exchange(self, alt_url: str) -> dict:
-        """访问跳转链换取全站 Cookie (PC + 移动端)。"""
-        seen, queue = set(), [alt_url]
-        while queue:
+        """用确认后的跳转地址换取全站 Cookie (PC + 移动端)。
+
+        微博这里可能返回三种形态, 逐层兜底:
+        1) JSON 里带 crossDomainUrlList (经典 SSO 跳转链)
+        2) HTML/JS 里 location.replace('https://...') 二次跳转
+        3) 直接 302 到 weibo.com, Set-Cookie 落在 session 上
+        """
+        queue, seen, ticket = [alt_url], set(), ""
+        for _ in range(8):
+            if not queue:
+                break
             u = queue.pop(0)
-            if u in seen:
+            if not u or u in seen or not u.startswith("http"):
                 continue
             seen.add(u)
+            m = re.search(r"[?&]ticket=(ST-[^&#\"']+)", u)
+            if m:
+                ticket = urllib.parse.unquote(m.group(1))
             try:
-                r = self.session.get(u, allow_redirects=False, timeout=15)
+                r = self.session.get(
+                    u, timeout=15, allow_redirects=True,
+                    headers={"Referer": "https://passport.weibo.com/"})
             except requests.RequestException:
                 continue
             try:
                 j = _parse_jsonp(r.text)
             except (ValueError, json.JSONDecodeError):
-                continue
-            for x in (j.get("crossDomainUrlList") or []):
-                if x not in seen:
+                j = None
+            if isinstance(j, dict):
+                for x in (j.get("crossDomainUrlList") or []):
                     queue.append(x)
-        # 激活移动端 Cookie (XSRF-TOKEN / _T_WM 等)
-        try:
-            self.session.get("https://m.weibo.cn/", timeout=15,
-                             headers={"User-Agent": M_UA})
-            self.session.get("https://m.weibo.cn/api/config", timeout=15,
-                             headers={"User-Agent": M_UA})
-        except requests.RequestException:
-            pass
+                if j.get("ticket"):
+                    ticket = ticket or str(j["ticket"])
+            # HTML 里的前端跳转: location.replace("...") / location.href="..."
+            for mm in re.finditer(
+                    r"""location\.(?:replace|href)\s*=?\s*\(?\s*["'](https?://[^"']+)""",
+                    r.text):
+                queue.append(mm.group(1).replace("&amp;", "&"))
+
+        # cookie 仍不完整时, 用 ticket 再走一次 SSO 换票
+        if ticket and not self._has_login_cookie():
+            for u in (
+                "https://passport.weibo.com/wbsso/login"
+                "?ticket=%s&ssosavestate=%d" % (urllib.parse.quote(ticket), int(time.time())),
+                "https://login.sina.com.cn/sso/login.php"
+                "?url=https%%3A%%2F%%2Fweibo.com&ticket=%s&returntype=TEXT"
+                % urllib.parse.quote(ticket),
+            ):
+                try:
+                    self.session.get(u, timeout=15, allow_redirects=True)
+                except requests.RequestException:
+                    continue
+
+        # 激活移动端 Cookie (XSRF-TOKEN / _T_WM 等), m.weibo.cn 接口要用
+        for u in ("https://m.weibo.cn/", "https://m.weibo.cn/api/config"):
+            try:
+                self.session.get(u, timeout=15, headers={"User-Agent": M_UA})
+            except requests.RequestException:
+                pass
         return self.session.cookies.get_dict()
+
+    def _has_login_cookie(self) -> bool:
+        keys = {c.name for c in self.session.cookies}
+        return bool(keys & {"SUB", "SUBP", "ALF", "SSOLoginState"})
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +255,7 @@ class WeiboClient:
             "X-Requested-With": "XMLHttpRequest",
         })
         self.session.cookies.update(cookies)
+        self.scan = {"unknown": []}   # 最近一次拉取时无法识别状态的超话
 
     def get_json(self, url, params=None):
         r = self.session.get(url, params=params, timeout=15)
@@ -232,8 +290,12 @@ class WeiboClient:
         - signable: [{"name": 超话名, "scheme": 签到链接}]
         - done: 已签到数量
         - total: 超话总数
+
+        按钮文案微博改过几次(签到/去签到/已签到/明日再来/打卡), 这里统一用关键词判断,
+        识别不出来的会记在 self.scan["unknown"] 里, 供「签到检测」展示。
         """
         signable, done, total = [], 0, 0
+        self.scan = {"unknown": []}
         seen_pages = set()
         since_id = ""
         for _ in range(40):  # 最多 40 页, 防止异常循环
@@ -254,20 +316,34 @@ class WeiboClient:
                     if not buttons:
                         continue
                     total += 1
-                    names = [b.get("name", "") for b in buttons]
-                    if "签到" in names:
-                        scheme = next(b.get("scheme") for b in buttons
-                                      if b.get("name") == "签到")
-                        if scheme:
-                            signable.append({"name": name, "scheme": scheme})
-                    elif "已签到" in names or "明日再来" in names:
+                    names = [(b.get("name") or "").strip() for b in buttons]
+                    joined = " ".join(names)
+                    # 已签: 已签到 / 已签 / 明日再来 / 已打卡
+                    if ("已签" in joined) or ("明日再来" in joined) or ("已打卡" in joined):
                         done += 1
+                        continue
+                    # 可签: 文案含 签到/打卡 且带 scheme
+                    btn = next((b for b in buttons
+                                if ("签到" in (b.get("name") or "")
+                                    or "打卡" in (b.get("name") or ""))
+                                and b.get("scheme")), None)
+                    if btn:
+                        signable.append({"name": name, "scheme": btn["scheme"]})
+                    else:
+                        self.scan["unknown"].append({"name": name, "buttons": names[:4]})
             since_id = str(data.get("since_id") or "")
             if not since_id or since_id in seen_pages:
                 break
             seen_pages.add(since_id)
             time.sleep(random.uniform(0.5, 1.0))
         return signable, done, total
+
+    def detect(self) -> dict:
+        """只检测不签到: 返回总数 / 已签数 / 待签列表 / 未识别项。"""
+        signable, done, total = self.fetch_topics()
+        return {"total": total, "done": done,
+                "pending": [t["name"] for t in signable],
+                "unknown": self.scan.get("unknown", [])}
 
     def sign(self, item):
         """对单个超话执行签到, 返回 (成功?, 消息)。"""
