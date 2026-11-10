@@ -85,8 +85,8 @@ def _do_checkin(acc: dict, trigger: str) -> dict:
         relog_ok = _try_relogin(acc, name)
         if not relog_ok:
             msg = "登录已过期，请打开签到面板重新扫码登录"
-            if store.get_settings().get("push_on_check_fail", True) and _push_allowed():
-                notifier.push("微博签到·登录过期", "账号【%s】%s" % (name, msg))
+            _push("微博签到·登录过期", "账号【%s】%s" % (name, msg),
+                  "push_on_check_fail", "检测登录失败")
             store.append_log("expired", "账号【%s】登录已过期 (触发: %s)" % (name, trigger))
             return {"ok": False, "msg": msg, "expired": True}
         client = WeiboClient(store.find_account(acc["id"])["cookies"])
@@ -137,19 +137,17 @@ def _do_checkin(acc: dict, trigger: str) -> dict:
                      % (name, total, done, success, len(failed)))
 
     # 推送项目按事件勾选: 有失败走「签到失败」开关, 全部成功走「签到成功」开关
-    s = store.get_settings()
-    want = s.get("push_on_checkin_failed" if failed else "push_on_checkin_success", True)
-    if want and _push_allowed():
-        content = ("账号: %s\n触发方式: %s\n\n"
-                   "签到结果: 共 %d 个超话\n"
-                   "├ 之前已签: %d 个\n"
-                   "├ 本次成功: %d 个\n"
-                   "└ 本次失败: %d 个"
-                   % (name, trigger, total, done, success, len(failed)))
-        if failed:
-            content += "\n\n失败明细:\n" + "\n".join("- " + f for f in failed[:10])
-        notifier.push("微博超话签到: 共%d 成功%d 失败%d"
-                      % (total, success, len(failed)), content)
+    content = ("账号: %s\n触发方式: %s\n\n"
+               "签到结果: 共 %d 个超话\n"
+               "├ 之前已签: %d 个\n"
+               "├ 本次成功: %d 个\n"
+               "└ 本次失败: %d 个"
+               % (name, trigger, total, done, success, len(failed)))
+    if failed:
+        content += "\n\n失败明细:\n" + "\n".join("- " + f for f in failed[:10])
+    _push("微博超话签到: 共%d 成功%d 失败%d" % (total, success, len(failed)), content,
+          "push_on_checkin_failed" if failed else "push_on_checkin_success",
+          "签到失败" if failed else "签到成功")
 
     return {"ok": True, "result": result}
 
@@ -169,9 +167,9 @@ def _try_relogin(acc: dict, name: str) -> bool:
         cookies = password_login(username, pwd)
     except Exception as e:
         store.append_log("error", "账号【%s】自动重登失败: %s" % (name, e))
-        if settings.get("push_on_check_fail", True) and _push_allowed():
-            notifier.push("微博签到·自动重登失败",
-                          "账号【%s】登录过期且密码自动重登失败:\n%s\n\n请打开面板重新扫码登录。" % (name, e))
+        _push("微博签到·自动重登失败",
+              "账号【%s】登录过期且密码自动重登失败:\n%s\n\n请打开面板重新扫码登录。" % (name, e),
+              "push_on_check_fail", "检测登录失败")
         return False
     client = WeiboClient(cookies)
     info = client.login_info()
@@ -180,20 +178,35 @@ def _try_relogin(acc: dict, name: str) -> bool:
     store.update_account(acc["id"], cookies=cookies, uid=info.get("uid") or acc.get("uid"),
                          status="ok", last_alive=time.time())
     store.append_log("info", "账号【%s】密码自动重登成功" % name)
-    if store.get_settings().get("push_on_check_ok", True) and _push_allowed():
-        notifier.push("微博签到·自动重登成功", "账号【%s】登录过期后已自动重新登录, 签到继续。" % name)
+    _push("微博签到·自动重登成功",
+          "账号【%s】登录过期后已自动重新登录, 签到继续。" % name,
+          "push_on_check_ok", "检测登录成功")
     return True
 
 
-def _push_allowed() -> bool:
-    """推送整点控制: 设置了 push_hour 时, 只有当前小时等于该值才推送。"""
-    h = str(store.get_settings().get("push_hour", "") or "").strip()
-    if h == "":
-        return True
-    try:
-        return datetime.datetime.now().hour == int(h)
-    except ValueError:
-        return True
+def _push(title: str, content: str, switch: str, switch_name: str):
+    """统一推送出口: 按事件开关与推送整点发送, 并把结果记入运行日志 (推送记录)。
+
+    之前推送是静默的: 没配 Key / 被推送整点拦下 / 渠道请求失败, 日志里都看不到,
+    收不到推送时无从排查。现在跳过原因和每个渠道的结果都会记录。
+    """
+    s = store.get_settings()
+    if not s.get(switch, True):
+        store.append_log("push", "推送跳过: 「%s」开关未开启 | %s" % (switch_name, title))
+        return
+    h = str(s.get("push_hour", "") or "").strip()
+    if h.isdigit() and datetime.datetime.now().hour != int(h):
+        store.append_log("push", "推送跳过: 未到推送整点 %s 点 | %s" % (h, title))
+        return
+    results = notifier.push(title, content)
+    if not results:
+        store.append_log("push", "推送失败: 未配置任何推送 Key | %s" % title)
+        return
+    parts = []
+    for name, r in results:
+        r = " ".join(str(r).split())
+        parts.append("%s=%s" % (name, "成功" if r == "ok" else "失败 " + r[:60]))
+    store.append_log("push", "%s | %s" % (title, "; ".join(parts)))
 
 
 def run_checkin_all(trigger: str = "定时"):
@@ -229,7 +242,6 @@ def _fmt_next_check() -> str:
 def expiry_monitor():
     """定期检测所有账号登录状态; 过期则尝试重登并推送; 检测完推送汇总结果。"""
     store.save("monitor.json", {"last_run": time.time()})  # 记录本次例行检测时刻, 用于计算下次时间
-    settings = store.get_settings()
     accounts = store.get_accounts()
     lines, ok_count = [], 0
     for acc in accounts:
@@ -256,19 +268,17 @@ def expiry_monitor():
             store.append_log("expired", "账号【%s】登录已过期 (例行检测)" % name)
         lines.append("%s: 已过期, 请重新扫码登录" % name)
     # 检测结果汇总推送: 全部正常走「检测登录成功」开关, 有异常走「检测登录失败」开关
-    if accounts and _push_allowed():
+    if accounts:
         all_ok = ok_count == len(accounts)
-        if all_ok and not settings.get("push_on_check_ok", True):
-            return
-        if not all_ok and not settings.get("push_on_check_fail", True):
-            return
         title = ("微博登录检测: 全部正常" if all_ok
                  else "微博登录检测: %d/%d 正常" % (ok_count, len(accounts)))
         content = ("检测结果: 共 %d 个账号\n" % len(accounts)
                    + "\n".join(("└ " if i == len(lines) - 1 else "├ ") + l
                                 for i, l in enumerate(lines))
                    + "\n\n下次检测: " + _fmt_next_check())
-        notifier.push(title, content)
+        _push(title, content,
+              "push_on_check_ok" if all_ok else "push_on_check_fail",
+              "检测登录成功" if all_ok else "检测登录失败")
 
 
 def _daily_job():
